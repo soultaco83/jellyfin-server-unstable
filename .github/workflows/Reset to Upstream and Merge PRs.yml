@@ -1,0 +1,164 @@
+name: Reset to Upstream and Merge PRs
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # Runs at midnight EST sunday
+  workflow_dispatch:
+
+# Permission for the default GITHUB_TOKEN
+permissions:
+  contents: write
+
+env:
+  DEFAULT_PR_NUMBERS: '12775,13145,13547,13892,14021,14039,14047,14060,14085,14131,14178,14179'
+  
+jobs:
+  reset-and-merge:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          # Just use the default GITHUB_TOKEN
+      
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+      
+      - name: Backup workflow files and au.csv
+        run: |
+          # Backup workflows
+          mkdir -p /tmp/workflows-backup
+          if [ -d ".github/workflows" ]; then
+            cp ".github/workflows/Reset to Upstream and Merge PRs.yml" "/tmp/workflows-backup/Reset to Upstream and Merge PRs.yml"
+          fi
+          
+          # Backup au.csv ratings file
+          mkdir -p /tmp/ratings-backup
+          if [ -f "Emby.Server.Implementations/Localization/Ratings/au.csv" ]; then
+            cp Emby.Server.Implementations/Localization/Ratings/au.csv /tmp/ratings-backup/
+            echo "Backed up au.csv ratings file"
+          else
+            echo "au.csv ratings file not found in current repository"
+          fi
+      
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/jellyfin/jellyfin.git || \
+          git remote set-url upstream https://github.com/jellyfin/jellyfin.git
+      
+      - name: Fetch from upstream
+        run: |
+          git fetch upstream --prune
+      
+      - name: Reset to upstream/master and clean up workflow files
+        run: |
+          git checkout master
+          git reset --hard upstream/master
+          
+          # Remove all upstream workflow files
+          if [ -d ".github/workflows" ]; then
+            git rm -rf .github/workflows
+            git commit -m "Remove all upstream workflow files"
+          fi
+      
+      - name: Restore our workflow file and au.csv
+        run: |
+          # Restore only our specific workflow file
+          mkdir -p .github/workflows
+          if [ -f "/tmp/workflows-backup/Reset to Upstream and Merge PRs.yml" ]; then
+            cp "/tmp/workflows-backup/Reset to Upstream and Merge PRs.yml" ".github/workflows/"
+            git add ".github/workflows/Reset to Upstream and Merge PRs.yml"
+            git commit -m "Restore our workflow file after reset"
+          fi
+          
+          # Restore au.csv ratings file
+          if [ -f "/tmp/ratings-backup/au.csv" ]; then
+            mkdir -p Emby.Server.Implementations/Localization/Ratings
+            cp /tmp/ratings-backup/au.csv Emby.Server.Implementations/Localization/Ratings/
+            git add Emby.Server.Implementations/Localization/Ratings/au.csv
+            git commit -m "Restore au.csv ratings file after reset"
+            echo "Restored au.csv ratings file"
+          fi
+      
+      - name: Merge PRs
+        id: merge_prs
+        run: |
+          # Use the input PR numbers if provided, otherwise use the default PR numbers
+          PR_NUMBERS="${{ github.event.inputs.pr_numbers }}"
+          if [ -z "$PR_NUMBERS" ]; then
+            PR_NUMBERS="${{ env.DEFAULT_PR_NUMBERS }}"
+            echo "Using default PR numbers: $PR_NUMBERS"
+          else
+            echo "Using provided PR numbers: $PR_NUMBERS"
+          fi
+          
+          IFS=',' read -ra PR_ARRAY <<< "$PR_NUMBERS"
+          MERGE_FAILED=false
+          
+          for PR_NUMBER in "${PR_ARRAY[@]}"; do
+            echo "Processing PR $PR_NUMBER"
+            
+            # Fetch the PR branch
+            if git fetch upstream pull/$PR_NUMBER/head:pr-$PR_NUMBER; then
+              echo "Fetched PR $PR_NUMBER successfully"
+              
+              # Try to merge the PR
+              if git merge pr-$PR_NUMBER --no-ff -m "Merge PR $PR_NUMBER into master"; then
+                echo "Merged PR $PR_NUMBER successfully"
+                
+                # Show changes from this PR
+                echo "Changes from PR $PR_NUMBER:"
+                git show HEAD --name-status
+              else
+                echo "Merge conflict in PR $PR_NUMBER"
+                git merge --abort
+                echo "Warning: Skipped PR $PR_NUMBER due to merge conflicts" >> merge_results.txt
+                MERGE_FAILED=true
+              fi
+            else
+              echo "Error: Failed to fetch PR $PR_NUMBER. The PR may not exist."
+              echo "Warning: Skipped PR $PR_NUMBER (not found)" >> merge_results.txt
+              MERGE_FAILED=true
+            fi
+          done
+          
+          if [ -f "merge_results.txt" ]; then
+            echo "Some PRs had issues and were skipped:"
+            cat merge_results.txt
+            echo "has_merge_failures=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_merge_failures=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Set the output for use in conditional steps
+          echo "merge_failed=$MERGE_FAILED" >> $GITHUB_OUTPUT
+
+      - name: Push changes
+        run: |
+          git push origin master --force
+      
+      - name: Send Discord notification for merge failures
+        uses: Ilshidur/action-discord@master
+        if: steps.merge_prs.outputs.has_merge_failures == 'true'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        with:
+          args: |
+            ⚠️ Some PR merges failed!
+            PRs attempted: ${{ github.event.inputs.pr_numbers || env.DEFAULT_PR_NUMBERS }}
+            See merge_results.txt in the workflow logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      
+      - name: Send Discord notification on workflow failure
+        uses: Ilshidur/action-discord@master
+        if: failure()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        with:
+          args: |
+            ❌ Repository reset failed!
+            PRs attempted: ${{ github.event.inputs.pr_numbers || env.DEFAULT_PR_NUMBERS }}
+            See workflow logs for details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

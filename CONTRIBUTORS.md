@@ -203,6 +203,7 @@
  - [Shoham Peller](https://github.com/spellr)
  - [theshoeshiner](https://github.com/theshoeshiner)
  - [TokerX](https://github.com/TokerX)
+ - [Eytam Levine](https://github.com/Eyt-Lev)
 
 # Emby Contributors
 

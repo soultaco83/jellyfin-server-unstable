@@ -204,6 +204,7 @@
  - [theshoeshiner](https://github.com/theshoeshiner)
  - [TokerX](https://github.com/TokerX)
  - [GeneMarks](https://github.com/GeneMarks)
+ - [Eytam Levine](https://github.com/Eyt-Lev)
 
 # Emby Contributors
 

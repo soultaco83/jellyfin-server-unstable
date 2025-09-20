@@ -1,6 +1,28 @@
 <h1 align="center">Jellyfin</h1>
 <h3 align="center">The Free Software Media System</h3>
 
+## Currently Installed PRs
+
+The following PRs are automatically merged into this fork:
+
+- Upstream PR 12775
+- Upstream PR 13892
+- Upstream PR 14155
+- Upstream PR 14654
+- Upstream PR 14656
+- Upstream PR 14746
+- Upstream PR 14755
+- Upstream PR 14786
+- Upstream PR 14788
+- Upstream PR 14791
+- Upstream PR 14794
+- Upstream PR 14795
+- Upstream PR 14809
+- Upstream PR 14817
+- Upstream PR 14819
+- Upstream PR 14820
+
+---
 ---
 
 <p align="center">

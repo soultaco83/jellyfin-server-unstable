@@ -24,7 +24,6 @@ using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.MediaInfo;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using UtfUnknown;
 

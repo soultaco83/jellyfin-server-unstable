@@ -142,6 +142,7 @@
  - [thornbill](https://github.com/thornbill)
  - [ThreeFive-O](https://github.com/ThreeFive-O)
  - [tjwalkr3](https://github.com/tjwalkr3)
+ - [Timminator](https://github.com/timminator)
  - [TrisMcC](https://github.com/TrisMcC)
  - [trumblejoe](https://github.com/trumblejoe)
  - [TtheCreator](https://github.com/TtheCreator)

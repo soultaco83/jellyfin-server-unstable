@@ -8,6 +8,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Mime;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,6 +24,7 @@ using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.MediaInfo;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using UtfUnknown;
 
@@ -964,10 +966,13 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             {
                 case MediaProtocol.Http:
                     {
-                        using var response = await _httpClientFactory.CreateClient(NamedClient.Default)
-                            .GetAsync(new Uri(path), cancellationToken)
+                        var client = _httpClientFactory.CreateClient(NamedClient.Default);
+                        var req = new HttpRequestMessage(HttpMethod.Get, path);
+                        var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                             .ConfigureAwait(false);
-                        return await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                        resp.EnsureSuccessStatusCode();
+
+                        return await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
                     }
 
                 case MediaProtocol.File:

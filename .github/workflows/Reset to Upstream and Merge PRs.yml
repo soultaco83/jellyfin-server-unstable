@@ -70,23 +70,6 @@ jobs:
           # Set merge strategy to avoid merge commit messages prompts
           git config pull.rebase false
 
-      - name: Backup workflow files and au.json
-        run: |
-          # Backup workflows
-          mkdir -p /tmp/workflows-backup
-          if [ -d ".github/workflows" ]; then
-            cp ".github/workflows/Reset to Upstream and Merge PRs.yml" "/tmp/workflows-backup/Reset to Upstream and Merge PRs.yml"
-          fi
-
-          # Backup au.json ratings file
-          mkdir -p /tmp/ratings-backup
-          if [ -f "Emby.Server.Implementations/Localization/Ratings/au.json" ]; then
-            cp Emby.Server.Implementations/Localization/Ratings/au.json /tmp/ratings-backup/
-            echo "Backed up au.json ratings file"
-          else
-            echo "au.json ratings file not found in current repository"
-          fi
-
       - name: Add upstream remote
         run: |
           # Add upstream without authentication (public repo)
@@ -109,46 +92,51 @@ jobs:
           
           echo "Fetched latest changes from all remotes"
 
-      - name: Reset to upstream
-        id: reset_upstream
+      - name: Merge upstream changes
+        id: merge_upstream
         run: |
           echo "Current branch: $(git branch --show-current)"
           echo "Current commit: $(git rev-parse HEAD)"
+          echo "Upstream commit: $(git rev-parse upstream/master)"
           
-          # Reset to upstream/master and clean up workflow files
           git checkout master
-          git reset --hard upstream/master
-
-          # Remove all upstream workflow files
-          if [ -d ".github/workflows" ]; then
-            git rm -rf .github/workflows
-            git commit -m "Remove all upstream workflow files"
-          fi
           
-          echo "Successfully reset to upstream"
-          echo "reset_success=true" >> $GITHUB_OUTPUT
-
-      - name: Restore workflow files and au.json
-        run: |
-          # Restore workflow file
-          mkdir -p .github/workflows
-          if [ -f "/tmp/workflows-backup/Reset to Upstream and Merge PRs.yml" ]; then
-            cp "/tmp/workflows-backup/Reset to Upstream and Merge PRs.yml" ".github/workflows/"
-            git add ".github/workflows/Reset to Upstream and Merge PRs.yml"
-            git commit -m "Restore our workflow file after reset"
-          fi
-
-          # Restore au.json ratings file
-          if [ -f "/tmp/ratings-backup/au.json" ]; then
-            mkdir -p Emby.Server.Implementations/Localization/Ratings
-            cp /tmp/ratings-backup/au.json Emby.Server.Implementations/Localization/Ratings/
-            git add Emby.Server.Implementations/Localization/Ratings/au.json
-            git commit -m "Restore au.json ratings file after reset"
-            echo "Restored au.json ratings file"
+          # Attempt to merge upstream/master
+          if git merge upstream/master --no-ff -m "Merge latest upstream Jellyfin changes"; then
+            echo "✅ Successfully merged upstream changes"
+            echo "merge_success=true" >> $GITHUB_OUTPUT
+            echo "had_conflicts=false" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Merge conflicts detected in the following files:"
+            git diff --name-only --diff-filter=U
+            
+            # Store conflict info for later
+            git diff --name-only --diff-filter=U > /tmp/conflict_files.txt
+            
+            echo "had_conflicts=true" >> $GITHUB_OUTPUT
+            echo "merge_success=false" >> $GITHUB_OUTPUT
+            
+            # Create a summary of conflicts
+            echo "## ⚠️ Merge Conflicts Detected" > /tmp/conflict_summary.txt
+            echo "" >> /tmp/conflict_summary.txt
+            echo "The following files have conflicts between your custom changes and upstream:" >> /tmp/conflict_summary.txt
+            echo "" >> /tmp/conflict_summary.txt
+            while IFS= read -r file; do
+              echo "- \`$file\`" >> /tmp/conflict_summary.txt
+            done < /tmp/conflict_files.txt
+            echo "" >> /tmp/conflict_summary.txt
+            echo "**Action Required:** Please manually review and resolve these conflicts." >> /tmp/conflict_summary.txt
+            echo "The workflow has been stopped to prevent automatic resolution that might lose your changes." >> /tmp/conflict_summary.txt
+            
+            # Abort the merge
+            git merge --abort
+            
+            # Exit with error to stop the workflow
+            exit 1
           fi
 
       - name: Check PR status (merged, closed, or open)
-        if: steps.reset_upstream.outputs.reset_success == 'true'
+        if: steps.merge_upstream.outputs.merge_success == 'true'
         id: check_pr_status
         run: |
           # Use the input PR numbers if provided, otherwise use the default PR numbers
@@ -215,7 +203,7 @@ jobs:
           echo "unmerged_prs=$UNMERGED_PRS" >> $GITHUB_OUTPUT
 
       - name: Merge PRs
-        if: steps.reset_upstream.outputs.reset_success == 'true'
+        if: steps.merge_upstream.outputs.merge_success == 'true'
         id: merge_prs
         run: |
           if [ ! -f "prs_to_merge.txt" ]; then
@@ -359,7 +347,7 @@ jobs:
           echo "newly_merged_prs=$NEWLY_MERGED_PRS" >> $GITHUB_OUTPUT
 
       - name: Update README with current PR list
-        if: steps.reset_upstream.outputs.reset_success == 'true'
+        if: steps.merge_upstream.outputs.merge_success == 'true'
         run: |
           # Get PR status information
           MERGED_UPSTREAM_PRS="${{ steps.check_pr_status.outputs.merged_upstream_prs }}"
@@ -461,290 +449,4 @@ jobs:
               echo "" >> /tmp/pr_section.md
               IFS=',' read -ra MERGED_ARRAY <<< "$RECENT_MERGED_PRS"
               for PR_NUMBER in "${MERGED_ARRAY[@]}"; do
-                PR_NUMBER=$(echo "$PR_NUMBER" | xargs)
-                MERGE_DATE=$(cat "$MERGED_PRS_FILE" | jq -r --arg pr "$PR_NUMBER" '.[$pr] // empty' | cut -d'T' -f1)
-                echo "- ~~[Upstream PR #$PR_NUMBER](https://github.com/jellyfin/jellyfin/pull/$PR_NUMBER)~~ (merged on $MERGE_DATE)" >> /tmp/pr_section.md
-              done
-            fi
-
-            if [ -n "$RECENT_CLOSED_PRS" ]; then
-              echo "" >> /tmp/pr_section.md
-              echo "#### ❌ Closed Without Merging" >> /tmp/pr_section.md
-              echo "The following PRs were automatically removed as they were closed without being merged:" >> /tmp/pr_section.md
-              echo "" >> /tmp/pr_section.md
-              IFS=',' read -ra CLOSED_ARRAY <<< "$RECENT_CLOSED_PRS"
-              for PR_NUMBER in "${CLOSED_ARRAY[@]}"; do
-                PR_NUMBER=$(echo "$PR_NUMBER" | xargs)
-                CLOSE_DATE=$(cat "$CLOSED_PRS_FILE" | jq -r --arg pr "$PR_NUMBER" '.[$pr] // empty' | cut -d'T' -f1)
-                echo "- ~~[Upstream PR #$PR_NUMBER](https://github.com/jellyfin/jellyfin/pull/$PR_NUMBER)~~ (closed on $CLOSE_DATE)" >> /tmp/pr_section.md
-              done
-            fi
-          else
-            echo "🎉 All PRs have been merged upstream or closed! This fork is now clean and matches the upstream Jellyfin repository." >> /tmp/pr_section.md
-            echo "" >> /tmp/pr_section.md
-
-            # Add recently removed section if there are any
-            if [ -n "$RECENT_MERGED_PRS" ] || [ -n "$RECENT_CLOSED_PRS" ]; then
-              echo "### Recently Removed PRs (Last 7 Days)" >> /tmp/pr_section.md
-            fi
-
-            if [ -n "$RECENT_MERGED_PRS" ]; then
-              echo "" >> /tmp/pr_section.md
-              echo "#### ✅ Merged Upstream" >> /tmp/pr_section.md
-              echo "The following PRs were automatically removed as they have been merged into upstream Jellyfin:" >> /tmp/pr_section.md
-              echo "" >> /tmp/pr_section.md
-              IFS=',' read -ra MERGED_ARRAY <<< "$RECENT_MERGED_PRS"
-              for PR_NUMBER in "${MERGED_ARRAY[@]}"; do
-                PR_NUMBER=$(echo "$PR_NUMBER" | xargs)
-                MERGE_DATE=$(cat "$MERGED_PRS_FILE" | jq -r --arg pr "$PR_NUMBER" '.[$pr] // empty' | cut -d'T' -f1)
-                echo "- ~~[Upstream PR #$PR_NUMBER](https://github.com/jellyfin/jellyfin/pull/$PR_NUMBER)~~ (merged on $MERGE_DATE)" >> /tmp/pr_section.md
-              done
-            fi
-
-            if [ -n "$RECENT_CLOSED_PRS" ]; then
-              echo "" >> /tmp/pr_section.md
-              echo "#### ❌ Closed Without Merging" >> /tmp/pr_section.md
-              echo "The following PRs were automatically removed as they were closed without being merged:" >> /tmp/pr_section.md
-              echo "" >> /tmp/pr_section.md
-              IFS=',' read -ra CLOSED_ARRAY <<< "$RECENT_CLOSED_PRS"
-              for PR_NUMBER in "${CLOSED_ARRAY[@]}"; do
-                PR_NUMBER=$(echo "$PR_NUMBER" | xargs)
-                CLOSE_DATE=$(cat "$CLOSED_PRS_FILE" | jq -r --arg pr "$PR_NUMBER" '.[$pr] // empty' | cut -d'T' -f1)
-                echo "- ~~[Upstream PR #$PR_NUMBER](https://github.com/jellyfin/jellyfin/pull/$PR_NUMBER)~~ (closed on $CLOSE_DATE)" >> /tmp/pr_section.md
-              done
-            fi
-          fi
-
-          echo "" >> /tmp/pr_section.md
-          echo "---" >> /tmp/pr_section.md
-
-          # Read the PR section content
-          PR_SECTION=$(cat /tmp/pr_section.md)
-
-          # Read the current README
-          README_CONTENT=$(cat README.md)
-
-          # Check if the PR section already exists
-          if echo "$README_CONTENT" | grep -q "## Currently Installed PRs"; then
-            # Replace existing section
-            # Extract content before the PR section
-            BEFORE_SECTION=$(echo "$README_CONTENT" | sed '/## Currently Installed PRs/,$d')
-            # Extract content after the PR section (after the next ---)
-            AFTER_SECTION=$(echo "$README_CONTENT" | sed -n '/## Currently Installed PRs/,/^---$/p' | sed '1,/^---$/d' | sed -n '/^---$/,$p' | tail -n +2)
-
-            # If no --- found after PR section, take everything after the next ##
-            if [ -z "$AFTER_SECTION" ]; then
-              AFTER_SECTION=$(echo "$README_CONTENT" | sed -n '/## Currently Installed PRs/,$p' | sed -n '/^## /,$p' | tail -n +2)
-            fi
-
-            # Combine the sections
-            echo "$BEFORE_SECTION" > README.md
-            echo "$PR_SECTION" >> README.md
-            echo "$AFTER_SECTION" >> README.md
-          else
-            # Add section after the main header
-            # Extract the header section (first 3 lines)
-            HEAD_SECTION=$(head -n 3 README.md)
-            # Extract the rest
-            REST_SECTION=$(tail -n +4 README.md)
-
-            # Combine sections
-            echo "$HEAD_SECTION" > README.md
-            echo "" >> README.md
-            echo "$PR_SECTION" >> README.md
-            echo "$REST_SECTION" >> README.md
-          fi
-
-          # Create commit message
-          COMMIT_MSG="Update README with current PR list"
-          if [ -n "$RECENT_MERGED_PRS" ] && [ -n "$RECENT_CLOSED_PRS" ]; then
-            COMMIT_MSG="$COMMIT_MSG (merged: $RECENT_MERGED_PRS, closed: $RECENT_CLOSED_PRS)"
-          elif [ -n "$RECENT_MERGED_PRS" ]; then
-            COMMIT_MSG="$COMMIT_MSG (merged upstream: $RECENT_MERGED_PRS)"
-          elif [ -n "$RECENT_CLOSED_PRS" ]; then
-            COMMIT_MSG="$COMMIT_MSG (closed: $RECENT_CLOSED_PRS)"
-          fi
-
-          # Commit the updated README and timestamps files
-          git add README.md "$MERGED_PRS_FILE" "$CLOSED_PRS_FILE"
-          git commit -m "$COMMIT_MSG" || echo "No changes to commit"
-
-      - name: Update PR list in workflow file
-        if: steps.reset_upstream.outputs.reset_success == 'true'
-        run: |
-          set +e  # Don't exit on error, we'll handle errors manually
-
-          echo "Starting PR list update process..."
-
-          # Read current PR list
-          CURRENT_PR_NUMBERS="${{ github.event.inputs.pr_numbers }}"
-          if [ -z "$CURRENT_PR_NUMBERS" ]; then
-            CURRENT_PR_NUMBERS="${{ env.DEFAULT_PR_NUMBERS }}"
-          fi
-
-          echo "Current PR list: $CURRENT_PR_NUMBERS"
-
-          # Get both merged and closed PRs
-          MERGED_UPSTREAM_PRS="${{ steps.check_pr_status.outputs.merged_upstream_prs }}"
-          CLOSED_PRS="${{ steps.check_pr_status.outputs.closed_prs }}"
-          
-          # Combine merged and closed PRs for removal
-          PRS_TO_REMOVE=""
-          if [ -n "$MERGED_UPSTREAM_PRS" ] && [ -n "$CLOSED_PRS" ]; then
-            PRS_TO_REMOVE="$MERGED_UPSTREAM_PRS,$CLOSED_PRS"
-          elif [ -n "$MERGED_UPSTREAM_PRS" ]; then
-            PRS_TO_REMOVE="$MERGED_UPSTREAM_PRS"
-          elif [ -n "$CLOSED_PRS" ]; then
-            PRS_TO_REMOVE="$CLOSED_PRS"
-          fi
-          
-          if [ -n "$PRS_TO_REMOVE" ]; then
-            echo "PRs to be removed (merged or closed): $PRS_TO_REMOVE"
-            
-            # Convert to arrays
-            IFS=',' read -ra CURRENT_ARRAY <<< "$CURRENT_PR_NUMBERS"
-            IFS=',' read -ra REMOVE_ARRAY <<< "$PRS_TO_REMOVE"
-            
-            NEW_PR_LIST=""
-            REMOVED_COUNT=0
-
-            for PR in "${CURRENT_ARRAY[@]}"; do
-              PR=$(echo $PR | xargs)  # Trim whitespace
-              SHOULD_REMOVE=false
-
-              # Check if this PR should be removed
-              for REMOVE_PR in "${REMOVE_ARRAY[@]}"; do
-                REMOVE_PR=$(echo $REMOVE_PR | xargs)
-                if [ "$PR" == "$REMOVE_PR" ]; then
-                  SHOULD_REMOVE=true
-                  ((REMOVED_COUNT++))
-                  echo "  Will remove PR $PR from list"
-                  break
-                fi
-              done
-
-              if [ "$SHOULD_REMOVE" == "false" ]; then
-                if [ -z "$NEW_PR_LIST" ]; then
-                  NEW_PR_LIST="$PR"
-                else
-                  NEW_PR_LIST="$NEW_PR_LIST,$PR"
-                fi
-              fi
-            done
-
-            # Update the workflow file if PRs were removed
-            if [ "$NEW_PR_LIST" != "$CURRENT_PR_NUMBERS" ]; then
-              echo "Updating PR list in workflow file..."
-              echo "Old list: $CURRENT_PR_NUMBERS"
-              echo "New list: $NEW_PR_LIST"
-              echo "Removed $REMOVED_COUNT PR(s)"
-
-              # Update the workflow file
-              WORKFLOW_FILE=".github/workflows/Reset to Upstream and Merge PRs.yml"
-
-              if [ -f "$WORKFLOW_FILE" ]; then
-                # Create a backup
-                cp "$WORKFLOW_FILE" "${WORKFLOW_FILE}.bak"
-
-                # Update the PR numbers
-                sed -i "s|DEFAULT_PR_NUMBERS: '.*'|DEFAULT_PR_NUMBERS: '$NEW_PR_LIST'|" "$WORKFLOW_FILE"
-
-                # Verify the change was made
-                if grep -q "DEFAULT_PR_NUMBERS: '$NEW_PR_LIST'" "$WORKFLOW_FILE"; then
-                  echo "Successfully updated workflow file"
-                  echo "PR_LIST_UPDATED=true" >> $GITHUB_ENV
-
-                  # Show the updated line
-                  grep "DEFAULT_PR_NUMBERS:" "$WORKFLOW_FILE"
-
-                  # Stage the change for commit
-                  git add "$WORKFLOW_FILE"
-
-                  # Remove backup
-                  rm -f "${WORKFLOW_FILE}.bak"
-                else
-                  echo "Error: Failed to update workflow file"
-                  echo "Looking for DEFAULT_PR_NUMBERS line:"
-                  grep "DEFAULT_PR_NUMBERS:" "$WORKFLOW_FILE" || echo "Line not found!"
-                  # Restore from backup
-                  mv "${WORKFLOW_FILE}.bak" "$WORKFLOW_FILE"
-                  exit 1
-                fi
-              else
-                echo "Warning: Workflow file not found at $WORKFLOW_FILE"
-                exit 1
-              fi
-            else
-              echo "No PRs to remove from the list"
-            fi
-          else
-            echo "No PRs were merged upstream or closed - keeping current list intact"
-          fi
-
-      - name: Push changes
-        if: steps.reset_upstream.outputs.reset_success == 'true'
-        run: |
-          # Clean up temporary files
-          rm -f pr_status.txt merge_results.txt prs_to_merge.txt
-          
-          # Check if we have any uncommitted changes (workflow file update)
-          if ! git diff --cached --quiet; then
-            git commit -m "Auto-update PR list: removed merged/closed PRs"
-          fi
-
-          # Push all changes
-          git push origin master --force
-
-      - name: Generate summary
-        if: always()
-        run: |
-          echo "## Workflow Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          if [ "${{ steps.reset_upstream.outputs.reset_success }}" == "true" ]; then
-            echo "✅ Successfully reset to upstream" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Failed to reset to upstream" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          if [ -f "pr_status.txt" ]; then
-            cat pr_status.txt >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ -f "merge_results.txt" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            cat merge_results.txt >> $GITHUB_STEP_SUMMARY
-          fi
-
-          # Add info about PR list updates
-          if [ -n "${{ env.PR_LIST_UPDATED }}" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "## PR List Update" >> $GITHUB_STEP_SUMMARY
-            echo "Automatically removed merged/closed PRs from the workflow file" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: Send Discord notification on failure
-        uses: Ilshidur/action-discord@master
-        if: failure()
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-        with:
-          args: |
-            ❌ Reset to upstream failed!
-            PRs attempted: ${{ github.event.inputs.pr_numbers || env.DEFAULT_PR_NUMBERS }}
-            See workflow logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-      - name: Send Discord notification on success
-        uses: Ilshidur/action-discord@master
-        if: success()
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-        with:
-          args: |
-            ✅ Successfully reset to upstream jellyfin!
-            ${{ env.PR_LIST_UPDATED && '📝 PR list auto-updated - merged/closed PRs removed' || '' }}
-            📋 README updated with current PR status
-            🔧 Conflict resolution: ${{ github.event.inputs.conflict_resolution_strategy || 'auto-head' }}
-            Check the summary: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                PR_NUMBER=$(echo "$PR_NUMBE

@@ -1364,39 +1364,10 @@ public sealed class BaseItemRepository
 
         var noDiacritics = value.RemoveDiacritics();
 
-        // Build a string where any punctuation or symbol is treated as a separator (space).
-        var sb = new StringBuilder(noDiacritics.Length);
-        var previousWasSpace = false;
-        foreach (var ch in noDiacritics)
-        {
-            char outCh;
-            if (char.IsLetterOrDigit(ch) || char.IsWhiteSpace(ch))
-            {
-                outCh = ch;
-            }
-            else
-            {
-                outCh = ' ';
-            }
-
-            // normalize any whitespace character to a single ASCII space.
-            if (char.IsWhiteSpace(outCh))
-            {
-                if (!previousWasSpace)
-                {
-                    sb.Append(' ');
-                    previousWasSpace = true;
-                }
-            }
-            else
-            {
-                sb.Append(outCh);
-                previousWasSpace = false;
-            }
-        }
-
-        // trim leading/trailing spaces that may have been added.
-        var collapsed = sb.ToString().Trim();
+        // Replace any character that is not a letter, digit or whitespace with a space,
+        // then collapse consecutive whitespace to a single ASCII space, trim and lowercase.
+        var replaced = System.Text.RegularExpressions.Regex.Replace(noDiacritics, @"[^\p{L}\p{Nd}\s]", " ");
+        var collapsed = System.Text.RegularExpressions.Regex.Replace(replaced, @"\s+", " ").Trim();
         return collapsed.ToLowerInvariant();
     }
 

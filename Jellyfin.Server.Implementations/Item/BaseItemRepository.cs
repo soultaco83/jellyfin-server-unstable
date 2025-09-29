@@ -1352,7 +1352,16 @@ public sealed class BaseItemRepository
             return value;
         }
 
-        return value.RemoveDiacritics().ToLowerInvariant();
+        var noDiacritics = value.RemoveDiacritics();
+
+        // Explanation:
+        // \p{L} → any kind of Unicode letter.
+        // \p{Nd} → any decimal digit.
+        // \s → any whitespace (space, tab, newline, etc.).
+        // [^\p{L}\p{Nd}\s] → matches anything that’s not a letter, digit, or whitespace.
+        var replaced = System.Text.RegularExpressions.Regex.Replace(noDiacritics, @"[^\p{L}\p{Nd}\s]", " ");
+        var collapsed = System.Text.RegularExpressions.Regex.Replace(replaced, @"\s+", " ").Trim();
+        return collapsed.ToLowerInvariant();
     }
 
     private List<(ItemValueType MagicNumber, string Value)> GetItemValuesToSave(BaseItemDto item, List<string> inheritedTags)

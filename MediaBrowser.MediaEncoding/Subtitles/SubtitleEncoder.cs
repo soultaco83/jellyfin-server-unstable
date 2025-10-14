@@ -7,9 +7,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -479,13 +477,8 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 || string.Equals(codec, "pgssub", StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>
-        /// Extracts all extractable subtitles (text and pgs).
-        /// </summary>
-        /// <param name="mediaSource">The mediaSource.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>Task.</returns>
-        private async Task ExtractAllExtractableSubtitles(MediaSourceInfo mediaSource, CancellationToken cancellationToken)
+        /// <inheritdoc />
+        public async Task ExtractAllExtractableSubtitles(MediaSourceInfo mediaSource, CancellationToken cancellationToken)
         {
             var locks = new List<IDisposable>();
             var extractableStreams = new List<MediaStream>();
@@ -940,23 +933,6 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                     .ConfigureAwait(false);
             }
 
-            // Special handling for HTTP to avoid loading entire stream
-            if (mediaSource.Protocol == MediaProtocol.Http && !path.EndsWith(".mks", StringComparison.OrdinalIgnoreCase))
-            {
-                var charset = await GetHttpStreamCharset(path, cancellationToken).ConfigureAwait(false);
-                
-                // Apply the same UTF16 conversion logic
-                if ((path.EndsWith(".ass", StringComparison.Ordinal) || path.EndsWith(".ssa", StringComparison.Ordinal) || path.EndsWith(".srt", StringComparison.Ordinal))
-                    && (string.Equals(charset, "utf-16le", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(charset, "utf-16be", StringComparison.OrdinalIgnoreCase)))
-                {
-                    charset = string.Empty;
-                }
-                
-                _logger.LogDebug("charset {0} detected for {Path}", charset, path);
-                return charset;
-            }
-
             var stream = await GetStream(path, mediaSource.Protocol, cancellationToken).ConfigureAwait(false);
             await using (stream.ConfigureAwait(false))
             {
@@ -977,50 +953,16 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             }
         }
 
-        private async Task<string> GetHttpStreamCharset(string path, CancellationToken cancellationToken)
-        {
-            var client = _httpClientFactory.CreateClient(NamedClient.Default);
-            
-            // Use Range header to get only first 1KB for charset detection
-            using var req = new HttpRequestMessage(HttpMethod.Get, path);
-            req.Headers.Range = new RangeHeaderValue(0, 1023);
-            
-            using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseContentRead, cancellationToken)
-                .ConfigureAwait(false);
-            
-            // Handle servers that don't support range requests
-            if (resp.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable || 
-                resp.StatusCode == HttpStatusCode.OK)
-            {
-                using var stream = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-                
-                // Read only first 1KB even if we got the full content
-                var buffer = new byte[1024];
-                var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
-                
-                using var memoryStream = new MemoryStream(buffer, 0, bytesRead);
-                var result = await CharsetDetector.DetectFromStreamAsync(memoryStream, cancellationToken).ConfigureAwait(false);
-                return result.Detected?.EncodingName ?? string.Empty;
-            }
-            
-            resp.EnsureSuccessStatusCode();
-            return string.Empty;
-        }
-
         private async Task<Stream> GetStream(string path, MediaProtocol protocol, CancellationToken cancellationToken)
         {
             switch (protocol)
             {
                 case MediaProtocol.Http:
                     {
-                        var client = _httpClientFactory.CreateClient(NamedClient.Default);
-                        var req = new HttpRequestMessage(HttpMethod.Get, path);
-                        var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                        using var response = await _httpClientFactory.CreateClient(NamedClient.Default)
+                            .GetAsync(new Uri(path), cancellationToken)
                             .ConfigureAwait(false);
-                        resp.EnsureSuccessStatusCode();
-                        
-                        var contentStream = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-                        return new HttpStreamWrapper(req, resp, contentStream);
+                        return await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
                     }
 
                 case MediaProtocol.File:
@@ -1041,52 +983,6 @@ namespace MediaBrowser.MediaEncoding.Subtitles
         public void Dispose()
         {
             _semaphoreLocks.Dispose();
-        }
-
-        private sealed class HttpStreamWrapper : Stream
-        {
-            private readonly HttpResponseMessage _response;
-            private readonly HttpRequestMessage _request;
-            private readonly Stream _contentStream;
-            
-            public HttpStreamWrapper(HttpRequestMessage request, HttpResponseMessage response, Stream contentStream)
-            {
-                _request = request;
-                _response = response;
-                _contentStream = contentStream;
-            }
-            
-            // Delegate all Stream methods to _contentStream
-            public override bool CanRead => _contentStream.CanRead;
-            public override bool CanSeek => _contentStream.CanSeek;
-            public override bool CanWrite => _contentStream.CanWrite;
-            public override long Length => _contentStream.Length;
-            public override long Position 
-            { 
-                get => _contentStream.Position; 
-                set => _contentStream.Position = value; 
-            }
-            
-            public override void Flush() => _contentStream.Flush();
-            public override int Read(byte[] buffer, int offset, int count) 
-                => _contentStream.Read(buffer, offset, count);
-            public override long Seek(long offset, SeekOrigin origin) 
-                => _contentStream.Seek(offset, origin);
-            public override void SetLength(long value) 
-                => _contentStream.SetLength(value);
-            public override void Write(byte[] buffer, int offset, int count) 
-                => _contentStream.Write(buffer, offset, count);
-            
-            protected override void Dispose(bool disposing)
-            {
-                if (disposing)
-                {
-                    _contentStream?.Dispose();
-                    _response?.Dispose();
-                    _request?.Dispose();
-                }
-                base.Dispose(disposing);
-            }
         }
 
 #pragma warning disable CA1034 // Nested types should not be visible

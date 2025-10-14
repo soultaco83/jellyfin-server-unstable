@@ -67,6 +67,7 @@ jobs:
         run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
+          git config --global merge.ours.driver true
           # Set merge strategy to avoid merge commit messages prompts
           git config pull.rebase false
 

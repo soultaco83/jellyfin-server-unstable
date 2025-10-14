@@ -1,5 +1,6 @@
 * text=auto eol=lf
 *.png binary
 *.jpg binary
+.github/workflows/* merge=ours
 
 CONTRIBUTORS.md merge=union

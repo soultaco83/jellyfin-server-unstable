@@ -36,7 +36,8 @@ env:
   # Default PR numbers to use for both scheduled and manual runs (if not specified)
   # This list is automatically updated - merged PRs are removed after successful runs
   # To add new PRs: edit this line and add the PR numbers to the list
-  DEFAULT_PR_NUMBERS: '12775,13892,13977,14155,14608,14788,14809,14824,14879,14882,14897'
+  DEFAULT_PR_NUMBERS: '14897'
+  ###DEFAULT_PR_NUMBERS: '12775,13892,13977,14155,14608,14788,14809,14824,14879,14882,14897'
   #
   # Token for authentication
   GH_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
@@ -114,26 +115,88 @@ jobs:
             # Store conflict info for later
             git diff --name-only --diff-filter=U > /tmp/conflict_files.txt
             
-            echo "had_conflicts=true" >> $GITHUB_OUTPUT
-            echo "merge_success=false" >> $GITHUB_OUTPUT
+            # Check for modify/delete conflicts in workflow files
+            WORKFLOW_CONFLICTS=$(git diff --name-only --diff-filter=U | grep '^\.github/workflows/' || true)
+            OTHER_CONFLICTS=$(git diff --name-only --diff-filter=U | grep -v '^\.github/workflows/' || true)
             
-            # Create a summary of conflicts
-            echo "## ⚠️ Merge Conflicts Detected" > /tmp/conflict_summary.txt
-            echo "" >> /tmp/conflict_summary.txt
-            echo "The following files have conflicts between your custom changes and upstream:" >> /tmp/conflict_summary.txt
-            echo "" >> /tmp/conflict_summary.txt
-            while IFS= read -r file; do
-              echo "- \`$file\`" >> /tmp/conflict_summary.txt
-            done < /tmp/conflict_files.txt
-            echo "" >> /tmp/conflict_summary.txt
-            echo "**Action Required:** Please manually review and resolve these conflicts." >> /tmp/conflict_summary.txt
-            echo "The workflow has been stopped to prevent automatic resolution that might lose your changes." >> /tmp/conflict_summary.txt
-            
-            # Abort the merge
-            git merge --abort
-            
-            # Exit with error to stop the workflow
-            exit 1
+            if [ -n "$WORKFLOW_CONFLICTS" ] && [ -z "$OTHER_CONFLICTS" ]; then
+              echo "✅ Only workflow file conflicts detected - auto-resolving by keeping them deleted"
+              echo "" >> /tmp/conflict_files.txt
+              
+              # Remove the conflicted workflow files (keep our version = deleted)
+              while IFS= read -r file; do
+                if [[ $file == .github/workflows/* ]]; then
+                  echo "  Removing: $file"
+                  git rm "$file" 2>/dev/null || true
+                fi
+              done < /tmp/conflict_files.txt
+              
+              # Complete the merge
+              git commit -m "Merge latest upstream Jellyfin changes (removed upstream workflow files)"
+              echo "✅ Successfully merged upstream changes (auto-resolved workflow conflicts)"
+              echo "merge_success=true" >> $GITHUB_OUTPUT
+              echo "had_conflicts=false" >> $GITHUB_OUTPUT
+            elif [ -n "$WORKFLOW_CONFLICTS" ] && [ -n "$OTHER_CONFLICTS" ]; then
+              echo "⚠️ Mixed conflicts detected - auto-resolving workflow files only"
+              
+              # Remove the conflicted workflow files
+              while IFS= read -r file; do
+                if [[ $file == .github/workflows/* ]]; then
+                  echo "  Auto-resolving: $file (removing)"
+                  git rm "$file" 2>/dev/null || true
+                fi
+              done < /tmp/conflict_files.txt
+              
+              # Check if only workflow conflicts remain
+              REMAINING_CONFLICTS=$(git diff --name-only --diff-filter=U)
+              if [ -z "$REMAINING_CONFLICTS" ]; then
+                echo "✅ All conflicts resolved"
+                git commit -m "Merge latest upstream Jellyfin changes (removed upstream workflow files)"
+                echo "merge_success=true" >> $GITHUB_OUTPUT
+                echo "had_conflicts=false" >> $GITHUB_OUTPUT
+              else
+                echo "❌ Non-workflow conflicts remain:"
+                echo "$REMAINING_CONFLICTS"
+                
+                echo "had_conflicts=true" >> $GITHUB_OUTPUT
+                echo "merge_success=false" >> $GITHUB_OUTPUT
+                
+                # Create a summary of remaining conflicts
+                echo "## ⚠️ Merge Conflicts Detected" > /tmp/conflict_summary.txt
+                echo "" >> /tmp/conflict_summary.txt
+                echo "The following files have conflicts between your custom changes and upstream:" >> /tmp/conflict_summary.txt
+                echo "" >> /tmp/conflict_summary.txt
+                echo "$REMAINING_CONFLICTS" | while IFS= read -r file; do
+                  echo "- \`$file\`" >> /tmp/conflict_summary.txt
+                done
+                echo "" >> /tmp/conflict_summary.txt
+                echo "**Action Required:** Please manually review and resolve these conflicts." >> /tmp/conflict_summary.txt
+                echo "(Workflow file conflicts were auto-resolved by keeping them deleted)" >> /tmp/conflict_summary.txt
+                
+                # Abort the merge
+                git merge --abort
+                exit 1
+              fi
+            else
+              echo "had_conflicts=true" >> $GITHUB_OUTPUT
+              echo "merge_success=false" >> $GITHUB_OUTPUT
+              
+              # Create a summary of conflicts
+              echo "## ⚠️ Merge Conflicts Detected" > /tmp/conflict_summary.txt
+              echo "" >> /tmp/conflict_summary.txt
+              echo "The following files have conflicts between your custom changes and upstream:" >> /tmp/conflict_summary.txt
+              echo "" >> /tmp/conflict_summary.txt
+              while IFS= read -r file; do
+                echo "- \`$file\`" >> /tmp/conflict_summary.txt
+              done < /tmp/conflict_files.txt
+              echo "" >> /tmp/conflict_summary.txt
+              echo "**Action Required:** Please manually review and resolve these conflicts." >> /tmp/conflict_summary.txt
+              echo "The workflow has been stopped to prevent automatic resolution that might lose your changes." >> /tmp/conflict_summary.txt
+              
+              # Abort the merge
+              git merge --abort
+              exit 1
+            fi
           fi
 
       - name: Check PR status (merged, closed, or open)

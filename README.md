@@ -4,6 +4,12 @@
 
 The following PRs are automatically merged into this fork:
 
+- [Upstream PR #14897](https://github.com/jellyfin/jellyfin/pull/14897)
+
+---
+
+The following PRs are automatically merged into this fork:
+
 - [Upstream PR #12775](https://github.com/jellyfin/jellyfin/pull/12775)
 - [Upstream PR #13892](https://github.com/jellyfin/jellyfin/pull/13892)
 - [Upstream PR #13977](https://github.com/jellyfin/jellyfin/pull/13977)

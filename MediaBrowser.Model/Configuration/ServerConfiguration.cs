@@ -288,4 +288,24 @@ public class ServerConfiguration : BaseApplicationConfiguration
     /// Gets or sets a value indicating whether old authorization methods are allowed.
     /// </summary>
     public bool EnableLegacyAuthorization { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether Jellyseerr integration is enabled.
+    /// </summary>
+    public bool JellyseerrEnabled { get; set; }
+    
+    /// <summary>
+    /// Gets or sets the Jellyseerr server URLs (one or more for fallback).
+    /// </summary>
+    public string[] JellyseerrServerUrls { get; set; } = Array.Empty<string>();
+    
+    /// <summary>
+    /// Gets or sets the Jellyseerr API key.
+    /// </summary>
+    public string? JellyseerrApiKey { get; set; }
+    
+    /// <summary>
+    /// Gets or sets the timeout for Jellyseerr requests in seconds.
+    /// </summary>
+    public int JellyseerrTimeoutSeconds { get; set; } = 30;
 }

@@ -53,7 +53,7 @@ public class JellyseerrController : BaseJellyfinApiController
     [HttpGet("status")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
-    public async Task<ActionResult> GetStatus(CancellationToken cancellationToken)
+    public async Task<ActionResult<JellyseerrStatusResponse>> GetStatus(CancellationToken cancellationToken)
     {
         var config = _serverConfigurationManager.Configuration;
         
@@ -61,7 +61,7 @@ public class JellyseerrController : BaseJellyfinApiController
         {
             return StatusCode(
                 StatusCodes.Status503ServiceUnavailable,
-                new { connected = false, message = "Jellyseerr integration is disabled" });
+                new JellyseerrStatusResponse { Connected = false, Message = "Jellyseerr integration is disabled" });
         }
 
         var workingUrl = await GetWorkingServerUrlAsync(cancellationToken).ConfigureAwait(false);
@@ -70,10 +70,10 @@ public class JellyseerrController : BaseJellyfinApiController
         {
             return StatusCode(
                 StatusCodes.Status503ServiceUnavailable,
-                new { connected = false, message = "Unable to connect to any configured Jellyseerr server" });
+                new JellyseerrStatusResponse { Connected = false, Message = "Unable to connect to any configured Jellyseerr server" });
         }
 
-        return Ok(new { connected = true, serverUrl = workingUrl });
+        return Ok(new JellyseerrStatusResponse { Connected = true, ServerUrl = workingUrl });
     }
 
     /// <summary>
@@ -299,6 +299,27 @@ public class JellyseerrController : BaseJellyfinApiController
 
         return httpClient;
     }
+}
+
+/// <summary>
+/// Jellyseerr status response DTO.
+/// </summary>
+public class JellyseerrStatusResponse
+{
+    /// <summary>
+    /// Gets or sets a value indicating whether connection to Jellyseerr is successful.
+    /// </summary>
+    public bool Connected { get; set; }
+
+    /// <summary>
+    /// Gets or sets the working server URL.
+    /// </summary>
+    public string? ServerUrl { get; set; }
+
+    /// <summary>
+    /// Gets or sets an optional message.
+    /// </summary>
+    public string? Message { get; set; }
 }
 
 /// <summary>

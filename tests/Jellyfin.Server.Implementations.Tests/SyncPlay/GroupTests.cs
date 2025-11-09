@@ -9,75 +9,72 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
-namespace Jellyfin.Server.Implementations.Tests.SyncPlay
+namespace Jellyfin.Server.Implementations.Tests.SyncPlay;
+
+public class GroupTests
 {
-    public class GroupTests
+    public GroupTests()
     {
-        [Fact]
-        public void HasAccessToPlayQueue_ReturnsTrue_WhenItemsAreVisible()
-        {
-            var mockLogger = new Mock<ILogger<Emby.Server.Implementations.SyncPlay.Group>>();
-            var mockLoggerFactory = new Mock<ILoggerFactory>();
-            mockLoggerFactory.Setup(x => x.CreateLogger(It.IsAny<string>())).Returns(mockLogger.Object);
+        var mockLogger = new Mock<ILogger<Emby.Server.Implementations.SyncPlay.Group>>();
+        MockLoggerFactory = new Mock<ILoggerFactory>();
+        MockLoggerFactory.Setup(x => x.CreateLogger(It.IsAny<string>())).Returns(mockLogger.Object);
 
-            var mockUserManager = new Mock<IUserManager>();
-            var mockSessionManager = new Mock<ISessionManager>();
-            var mockLibraryManager = new Mock<ILibraryManager>();
+        MockUserManager = new Mock<IUserManager>();
+        MockSessionManager = new Mock<ISessionManager>();
+        MockLibraryManager = new Mock<ILibraryManager>();
+        MockItem = new Mock<BaseItem>();
+        MockItem.Setup(i => i.IsVisibleStandalone(It.IsAny<User>())).Returns(true);
+    }
 
-            var mockItem = new Mock<BaseItem>();
-            mockItem.Setup(i => i.IsVisibleStandalone(It.IsAny<User>())).Returns(true);
+    private Mock<ILoggerFactory> MockLoggerFactory { get; }
 
-            mockLibraryManager.Setup(m => m.GetItemById(It.IsAny<Guid>())).Returns(mockItem.Object);
+    private Mock<IUserManager> MockUserManager { get; }
 
-            var group = new Emby.Server.Implementations.SyncPlay.Group(mockLoggerFactory.Object, mockUserManager.Object, mockSessionManager.Object, mockLibraryManager.Object);
+    private Mock<ISessionManager> MockSessionManager { get; }
 
-            var itemId = Guid.NewGuid();
-            var playlist = new List<Guid> { itemId };
-            group.PlayQueue.Reset();
-            group.PlayQueue.SetPlaylist(playlist);
+    private Mock<ILibraryManager> MockLibraryManager { get; }
 
-            Assert.Single(group.PlayQueue.GetPlaylist());
-            Assert.Equal(itemId, group.PlayQueue.GetPlaylist()[0].ItemId);
+    private Mock<BaseItem> MockItem { get; }
 
-            var user = new User("test-user", "auth-provider", "pwdreset-provider");
+    [Fact]
+    public void HasAccessToPlayQueue_ReturnsTrue_WhenItemsAreVisible()
+    {
+        MockLibraryManager.Setup(m => m.GetItemById(It.IsAny<Guid>())).Returns(MockItem.Object);
 
-            var result = group.HasAccessToPlayQueue(user);
+        var group = new Emby.Server.Implementations.SyncPlay.Group(MockLoggerFactory.Object, MockUserManager.Object, MockSessionManager.Object, MockLibraryManager.Object);
+        var itemId = Guid.NewGuid();
+        var playlist = new List<Guid> { itemId };
+        group.PlayQueue.Reset();
+        group.PlayQueue.SetPlaylist(playlist);
 
-            Assert.True(result);
-        }
+        Assert.Single(group.PlayQueue.GetPlaylist());
+        Assert.Equal(itemId, group.PlayQueue.GetPlaylist()[0].ItemId);
 
-        [Fact]
-        public void HasAccessToPlayQueue_ReturnsFalse_WhenLibraryReturnsNullForItem()
-        {
-            var mockLogger = new Mock<ILogger<Emby.Server.Implementations.SyncPlay.Group>>();
-            var mockLoggerFactory = new Mock<ILoggerFactory>();
-            mockLoggerFactory.Setup(x => x.CreateLogger(It.IsAny<string>())).Returns(mockLogger.Object);
+        var user = new User("test-user", "auth-provider", "pwdreset-provider");
+        var result = group.HasAccessToPlayQueue(user);
 
-            var mockUserManager = new Mock<IUserManager>();
-            var mockSessionManager = new Mock<ISessionManager>();
-            var mockLibraryManager = new Mock<ILibraryManager>();
+        Assert.True(result);
+    }
 
-            var mockItem = new Mock<BaseItem>();
-            mockItem.Setup(i => i.IsVisibleStandalone(It.IsAny<User>())).Returns(true);
+    [Fact]
+    public void HasAccessToPlayQueue_ReturnsFalse_WhenLibraryReturnsNullForItem()
+    {
+        MockLibraryManager.Setup(m => m.GetItemById(It.IsAny<Guid>())).Returns((BaseItem?)null);
 
-            mockLibraryManager.Setup(m => m.GetItemById(It.IsAny<Guid>())).Returns((BaseItem?)null);
-            Assert.Null(
-                mockLibraryManager.Object.GetItemById(Guid.NewGuid()));
-            var group = new Emby.Server.Implementations.SyncPlay.Group(mockLoggerFactory.Object, mockUserManager.Object, mockSessionManager.Object, mockLibraryManager.Object);
+        Assert.Null(MockLibraryManager.Object.GetItemById(Guid.NewGuid()));
 
-            var itemId = Guid.NewGuid();
-            var playlist = new List<Guid> { itemId };
-            group.PlayQueue.Reset();
-            group.PlayQueue.SetPlaylist(playlist);
+        var group = new Emby.Server.Implementations.SyncPlay.Group(MockLoggerFactory.Object, MockUserManager.Object, MockSessionManager.Object, MockLibraryManager.Object);
+        var itemId = Guid.NewGuid();
+        var playlist = new List<Guid> { itemId };
+        group.PlayQueue.Reset();
+        group.PlayQueue.SetPlaylist(playlist);
 
-            Assert.Single(group.PlayQueue.GetPlaylist());
-            Assert.Equal(itemId, group.PlayQueue.GetPlaylist()[0].ItemId);
+        Assert.Single(group.PlayQueue.GetPlaylist());
+        Assert.Equal(itemId, group.PlayQueue.GetPlaylist()[0].ItemId);
 
-            var user = new User("test-user", "auth-provider", "pwdreset-provider");
+        var user = new User("test-user", "auth-provider", "pwdreset-provider");
+        var result = group.HasAccessToPlayQueue(user);
 
-            var result = group.HasAccessToPlayQueue(user);
-
-            Assert.False(result);
-        }
+        Assert.False(result);
     }
 }

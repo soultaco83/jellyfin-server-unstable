@@ -573,7 +573,7 @@ jobs:
           PR_SECTION=$(cat /tmp/pr_section.md)
 
           # Use Python to reliably update the README section
-          python3 << 'PYTHON_SCRIPT'
+          python3 <<'EOF'
 import re
 
 # Read README
@@ -606,7 +606,7 @@ with open('README.md', 'w') as f:
     f.write(new_readme)
 
 print("README updated successfully!")
-PYTHON_SCRIPT
+EOF
 
           # Create commit message
           COMMIT_MSG="Update README with current PR list"

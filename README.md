@@ -2,8 +2,23 @@
 <h3 align="center">The Free Software Media System</h3>
 ## Currently Installed PRs
 
-🎉 All PRs have been merged upstream or closed! This fork is now clean and matches the upstream Jellyfin repository.
+The following PRs are automatically merged into this fork:
 
+- [Upstream PR #12775](https://github.com/jellyfin/jellyfin/pull/12775)
+- [Upstream PR #13977](https://github.com/jellyfin/jellyfin/pull/13977)
+- [Upstream PR #14155](https://github.com/jellyfin/jellyfin/pull/14155)
+- [Upstream PR #14809](https://github.com/jellyfin/jellyfin/pull/14809)
+- [Upstream PR #14879](https://github.com/jellyfin/jellyfin/pull/14879)
+- [Upstream PR #14935](https://github.com/jellyfin/jellyfin/pull/14935)
+- [Upstream PR #15138](https://github.com/jellyfin/jellyfin/pull/15138)
+- [Upstream PR #15159](https://github.com/jellyfin/jellyfin/pull/15159)
+- [Upstream PR #15246](https://github.com/jellyfin/jellyfin/pull/15246)
+- [Upstream PR #15377](https://github.com/jellyfin/jellyfin/pull/15377)
+- [Upstream PR #15433](https://github.com/jellyfin/jellyfin/pull/15433)
+- [Upstream PR #15437](https://github.com/jellyfin/jellyfin/pull/15437)
+- [Upstream PR #15476](https://github.com/jellyfin/jellyfin/pull/15476)
+- [Upstream PR #15490](https://github.com/jellyfin/jellyfin/pull/15490)
+- [Upstream PR #15538](https://github.com/jellyfin/jellyfin/pull/15538)
 
 ---
 

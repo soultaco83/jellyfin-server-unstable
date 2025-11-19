@@ -16,7 +16,8 @@ The following PRs are automatically merged into this fork:
 - [Upstream PR #15433](https://github.com/jellyfin/jellyfin/pull/15433)
 - [Upstream PR #15437](https://github.com/jellyfin/jellyfin/pull/15437)
 - [Upstream PR #15476](https://github.com/jellyfin/jellyfin/pull/15476)
---
+
+---
 
 <p align="center">
 <img alt="Logo Banner" src="https://raw.githubusercontent.com/jellyfin/jellyfin-ux/master/branding/SVG/banner-logo-solid.svg?sanitize=true"/>

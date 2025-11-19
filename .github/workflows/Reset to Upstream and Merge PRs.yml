@@ -573,39 +573,41 @@ jobs:
           # Read the PR section content
           PR_SECTION=$(cat /tmp/pr_section.md)
 
-          # Read the current README
-          README_CONTENT=$(cat README.md)
+          # Use Python to reliably update the README section
+          python3 << 'PYTHON_SCRIPT'
+import re
 
-          # Check if the PR section already exists
-          if echo "$README_CONTENT" | grep -q "## Currently Installed PRs"; then
-            # Replace existing section
-            # Extract content before the PR section
-            BEFORE_SECTION=$(echo "$README_CONTENT" | sed '/## Currently Installed PRs/,$d')
-            # Extract content after the PR section (after the next ---)
-            AFTER_SECTION=$(echo "$README_CONTENT" | sed -n '/## Currently Installed PRs/,/^---$/p' | sed '1,/^---$/d' | sed -n '/^---$/,$p' | tail -n +2)
+# Read README
+with open('README.md', 'r') as f:
+    readme_content = f.read()
 
-            # If no --- found after PR section, take everything after the next ##
-            if [ -z "$AFTER_SECTION" ]; then
-              AFTER_SECTION=$(echo "$README_CONTENT" | sed -n '/## Currently Installed PRs/,$p' | sed -n '/^## /,$p' | tail -n +2)
-            fi
+# Read new PR section
+with open('/tmp/pr_section.md', 'r') as f:
+    pr_section = f.read()
 
-            # Combine the sections
-            echo "$BEFORE_SECTION" > README.md
-            echo "$PR_SECTION" >> README.md
-            echo "$AFTER_SECTION" >> README.md
-          else
-            # Add section after the main header
-            # Extract the header section (first 3 lines)
-            HEAD_SECTION=$(head -n 3 README.md)
-            # Extract the rest
-            REST_SECTION=$(tail -n +4 README.md)
+# Pattern to match the entire PR section from "## Currently Installed PRs" to "---"
+# This pattern will match:
+# - The heading "## Currently Installed PRs"
+# - Everything until the closing "---" (on its own line)
+pattern = r'## Currently Installed PRs.*?^---$'
 
-            # Combine sections
-            echo "$HEAD_SECTION" > README.md
-            echo "" >> README.md
-            echo "$PR_SECTION" >> README.md
-            echo "$REST_SECTION" >> README.md
-          fi
+# Check if the section exists
+if re.search(pattern, readme_content, re.MULTILINE | re.DOTALL):
+    # Replace the existing section
+    new_readme = re.sub(pattern, pr_section.rstrip(), readme_content, flags=re.MULTILINE | re.DOTALL)
+else:
+    # Section doesn't exist, add it after the header (first 3 lines)
+    lines = readme_content.split('\n')
+    header = '\n'.join(lines[:3])
+    rest = '\n'.join(lines[3:])
+    new_readme = f"{header}\n{pr_section}{rest}"
+
+# Write the updated README
+with open('README.md', 'w') as f:
+    f.write(new_readme)
+
+print("README updated successfully!")
+PYTHON_SCRIPT
 
           # Create commit message
           COMMIT_MSG="Update README with current PR list"

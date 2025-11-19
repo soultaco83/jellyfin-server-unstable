@@ -1708,15 +1708,16 @@ public sealed class BaseItemRepository
 
         if (!string.IsNullOrEmpty(filter.SearchTerm))
         {
-            var searchTerm = filter.SearchTerm.ToLower();
-            if (SearchWildcardTerms.Any(f => searchTerm.Contains(f)))
+            var cleanedSearchTerm = GetCleanValue(filter.SearchTerm);
+            var originalSearchTerm = filter.SearchTerm.ToLower();
+            if (SearchWildcardTerms.Any(f => cleanedSearchTerm.Contains(f)))
             {
-                searchTerm = $"%{searchTerm.Trim('%')}%";
-                baseQuery = baseQuery.Where(e => EF.Functions.Like(e.CleanName!.ToLower(), searchTerm) || (e.OriginalTitle != null && EF.Functions.Like(e.OriginalTitle.ToLower(), searchTerm)));
+                cleanedSearchTerm = $"%{cleanedSearchTerm.Trim('%')}%";
+                baseQuery = baseQuery.Where(e => EF.Functions.Like(e.CleanName!, cleanedSearchTerm) || (e.OriginalTitle != null && EF.Functions.Like(e.OriginalTitle.ToLower(), originalSearchTerm)));
             }
             else
             {
-                baseQuery = baseQuery.Where(e => e.CleanName!.ToLower().Contains(searchTerm) || (e.OriginalTitle != null && e.OriginalTitle.ToLower().Contains(searchTerm)));
+                baseQuery = baseQuery.Where(e => e.CleanName!.Contains(cleanedSearchTerm) || (e.OriginalTitle != null && e.OriginalTitle.ToLower().Contains(originalSearchTerm)));
             }
         }
 
@@ -1951,19 +1952,20 @@ public sealed class BaseItemRepository
 
         if (!string.IsNullOrWhiteSpace(filter.NameStartsWith))
         {
-            baseQuery = baseQuery.Where(e => e.SortName!.StartsWith(filter.NameStartsWith));
+            var startsWithLower = filter.NameStartsWith.ToLowerInvariant();
+            baseQuery = baseQuery.Where(e => e.SortName!.StartsWith(startsWithLower));
         }
 
         if (!string.IsNullOrWhiteSpace(filter.NameStartsWithOrGreater))
         {
-            // i hate this
-            baseQuery = baseQuery.Where(e => e.SortName!.FirstOrDefault() > filter.NameStartsWithOrGreater[0] || e.Name!.FirstOrDefault() > filter.NameStartsWithOrGreater[0]);
+            var startsOrGreaterLower = filter.NameStartsWithOrGreater.ToLowerInvariant();
+            baseQuery = baseQuery.Where(e => e.SortName!.CompareTo(startsOrGreaterLower) >= 0);
         }
 
         if (!string.IsNullOrWhiteSpace(filter.NameLessThan))
         {
-            // i hate this
-            baseQuery = baseQuery.Where(e => e.SortName!.FirstOrDefault() < filter.NameLessThan[0] || e.Name!.FirstOrDefault() < filter.NameLessThan[0]);
+            var lessThanLower = filter.NameLessThan.ToLowerInvariant();
+            baseQuery = baseQuery.Where(e => e.SortName!.CompareTo(lessThanLower ) < 0);
         }
 
         if (filter.ImageTypes.Length > 0)
@@ -2422,39 +2424,34 @@ public sealed class BaseItemRepository
 
         if (filter.ExcludeInheritedTags.Length > 0)
         {
-            baseQuery = baseQuery
-                .Where(e => !e.ItemValues!.Where(w => w.ItemValue.Type == ItemValueType.InheritedTags || w.ItemValue.Type == ItemValueType.Tags)
-                .Any(f => filter.ExcludeInheritedTags.Contains(f.ItemValue.CleanValue)));
+            baseQuery = baseQuery.Where(e =>
+                !e.ItemValues!.Any(f => f.ItemValue.Type == ItemValueType.Tags && filter.ExcludeInheritedTags.Contains(f.ItemValue.CleanValue))
+                && (e.Type != _itemTypeLookup.BaseItemKindNames[BaseItemKind.Episode] || !e.SeriesId.HasValue ||
+                !context.ItemValuesMap.Any(f => f.ItemId == e.SeriesId.Value && f.ItemValue.Type == ItemValueType.Tags && filter.ExcludeInheritedTags.Contains(f.ItemValue.CleanValue))));
         }
 
         if (filter.IncludeInheritedTags.Length > 0)
         {
-            // Episodes do not store inherit tags from their parents in the database, and the tag may be still required by the client.
-            // In addition to the tags for the episodes themselves, we need to manually query its parent (the season)'s tags as well.
-            if (includeTypes.Length == 1 && includeTypes.FirstOrDefault() is BaseItemKind.Episode)
+            // For seasons and episodes, we also need to check the parent series' tags.
+            if (includeTypes.Any(t => t == BaseItemKind.Episode || t == BaseItemKind.Season))
             {
-                baseQuery = baseQuery
-                    .Where(e => e.ItemValues!.Where(f => f.ItemValue.Type == ItemValueType.InheritedTags || f.ItemValue.Type == ItemValueType.Tags)
-                        .Any(f => filter.IncludeInheritedTags.Contains(f.ItemValue.CleanValue))
-                        ||
-                        (e.ParentId.HasValue && context.ItemValuesMap.Where(w => w.ItemId == e.ParentId.Value && (w.ItemValue.Type == ItemValueType.InheritedTags || w.ItemValue.Type == ItemValueType.Tags))
-                        .Any(f => filter.IncludeInheritedTags.Contains(f.ItemValue.CleanValue))));
+                baseQuery = baseQuery.Where(e =>
+                    e.ItemValues!.Any(f => f.ItemValue.Type == ItemValueType.Tags && filter.IncludeInheritedTags.Contains(f.ItemValue.CleanValue))
+                    || (e.SeriesId.HasValue && context.ItemValuesMap.Any(f => f.ItemId == e.SeriesId.Value && f.ItemValue.Type == ItemValueType.Tags && filter.IncludeInheritedTags.Contains(f.ItemValue.CleanValue))));
             }
 
             // A playlist should be accessible to its owner regardless of allowed tags.
             else if (includeTypes.Length == 1 && includeTypes.FirstOrDefault() is BaseItemKind.Playlist)
             {
-                baseQuery = baseQuery
-                    .Where(e => e.ItemValues!.Where(f => f.ItemValue.Type == ItemValueType.InheritedTags || f.ItemValue.Type == ItemValueType.Tags)
-                        .Any(f => filter.IncludeInheritedTags.Contains(f.ItemValue.CleanValue))
-                        || e.Data!.Contains($"OwnerUserId\":\"{filter.User!.Id:N}\""));
+                baseQuery = baseQuery.Where(e =>
+                    e.ItemValues!.Any(f => f.ItemValue.Type == ItemValueType.Tags && filter.IncludeInheritedTags.Contains(f.ItemValue.CleanValue))
+                    || e.Data!.Contains($"OwnerUserId\":\"{filter.User!.Id:N}\""));
                 // d        ^^ this is stupid it hate this.
             }
             else
             {
-                baseQuery = baseQuery
-                    .Where(e => e.ItemValues!.Where(f => f.ItemValue.Type == ItemValueType.InheritedTags || f.ItemValue.Type == ItemValueType.Tags)
-                        .Any(f => filter.IncludeInheritedTags.Contains(f.ItemValue.CleanValue)));
+                baseQuery = baseQuery.Where(e =>
+                    e.ItemValues!.Any(f => f.ItemValue.Type == ItemValueType.Tags && filter.IncludeInheritedTags.Contains(f.ItemValue.CleanValue)));
             }
         }
 

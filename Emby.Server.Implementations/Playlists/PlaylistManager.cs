@@ -198,22 +198,17 @@ namespace Emby.Server.Implementations.Playlists
             return Playlist.GetPlaylistItems(items, user, options);
         }
 
-        public Task AddItemToPlaylistAsync(Guid playlistId, IReadOnlyCollection<Guid> itemIds, int? position, Guid userId)
+        public Task AddItemToPlaylistAsync(Guid playlistId, IReadOnlyCollection<Guid> itemIds, Guid userId)
         {
             var user = userId.IsEmpty() ? null : _userManager.GetUserById(userId);
 
-            return AddToPlaylistInternal(
-                playlistId,
-                itemIds,
-                user,
-                new DtoOptions(false)
-                {
-                    EnableImages = true
-                },
-                position);
+            return AddToPlaylistInternal(playlistId, itemIds, user, new DtoOptions(false)
+            {
+                EnableImages = true
+            });
         }
 
-        private async Task AddToPlaylistInternal(Guid playlistId, IReadOnlyCollection<Guid> newItemIds, User user, DtoOptions options, int? position = null)
+        private async Task AddToPlaylistInternal(Guid playlistId, IReadOnlyCollection<Guid> newItemIds, User user, DtoOptions options)
         {
             // Retrieve the existing playlist
             var playlist = _libraryManager.GetItemById(playlistId) as Playlist
@@ -248,29 +243,8 @@ namespace Emby.Server.Implementations.Playlists
             }
 
             // Update the playlist in the repository
-            if (position.HasValue)
-            {
-                if (position.Value <= 0)
-                {
-                    playlist.LinkedChildren = [.. childrenToAdd, .. playlist.LinkedChildren];
-                }
-                else if (position.Value >= playlist.LinkedChildren.Length)
-                {
-                    playlist.LinkedChildren = [.. playlist.LinkedChildren, .. childrenToAdd];
-                }
-                else
-                {
-                    playlist.LinkedChildren = [
-                        .. playlist.LinkedChildren[0..position.Value],
-                        .. childrenToAdd,
-                        .. playlist.LinkedChildren[position.Value..playlist.LinkedChildren.Length]
-                    ];
-                }
-            }
-            else
-            {
-                playlist.LinkedChildren = [.. playlist.LinkedChildren, .. childrenToAdd];
-            }
+            playlist.LinkedChildren = [.. playlist.LinkedChildren, .. childrenToAdd];
+            playlist.DateLastMediaAdded = DateTime.UtcNow;
 
             await UpdatePlaylistInternal(playlist).ConfigureAwait(false);
 

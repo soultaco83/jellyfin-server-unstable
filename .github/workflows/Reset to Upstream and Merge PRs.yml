@@ -574,39 +574,39 @@ jobs:
 
           # Use Python to reliably update the README section
           python3 <<'EOF'
-import re
+          import re
 
-# Read README
-with open('README.md', 'r') as f:
-    readme_content = f.read()
+          # Read README
+          with open('README.md', 'r') as f:
+              readme_content = f.read()
 
-# Read new PR section
-with open('/tmp/pr_section.md', 'r') as f:
-    pr_section = f.read()
+          # Read new PR section
+          with open('/tmp/pr_section.md', 'r') as f:
+              pr_section = f.read()
 
-# Pattern to match the entire PR section from "## Currently Installed PRs" to "---"
-# This pattern will match:
-# - The heading "## Currently Installed PRs"
-# - Everything until the closing "---" (on its own line)
-pattern = r'## Currently Installed PRs.*?^---$'
+          # Pattern to match the entire PR section from "## Currently Installed PRs" to "---"
+          # This pattern will match:
+          # - The heading "## Currently Installed PRs"
+          # - Everything until the closing "---" (on its own line)
+          pattern = r'## Currently Installed PRs.*?^---$'
 
-# Check if the section exists
-if re.search(pattern, readme_content, re.MULTILINE | re.DOTALL):
-    # Replace the existing section
-    new_readme = re.sub(pattern, pr_section.rstrip(), readme_content, flags=re.MULTILINE | re.DOTALL)
-else:
-    # Section doesn't exist, add it after the header (first 3 lines)
-    lines = readme_content.split('\n')
-    header = '\n'.join(lines[:3])
-    rest = '\n'.join(lines[3:])
-    new_readme = f"{header}\n{pr_section}{rest}"
+          # Check if the section exists
+          if re.search(pattern, readme_content, re.MULTILINE | re.DOTALL):
+              # Replace the existing section
+              new_readme = re.sub(pattern, pr_section.rstrip(), readme_content, flags=re.MULTILINE | re.DOTALL)
+          else:
+              # Section doesn't exist, add it after the header (first 3 lines)
+              lines = readme_content.split('\n')
+              header = '\n'.join(lines[:3])
+              rest = '\n'.join(lines[3:])
+              new_readme = f"{header}\n{pr_section}{rest}"
 
-# Write the updated README
-with open('README.md', 'w') as f:
-    f.write(new_readme)
+          # Write the updated README
+          with open('README.md', 'w') as f:
+              f.write(new_readme)
 
-print("README updated successfully!")
-EOF
+          print("README updated successfully!")
+          EOF
 
           # Create commit message
           COMMIT_MSG="Update README with current PR list"

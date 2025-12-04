@@ -628,10 +628,16 @@ public sealed class BaseItemRepository
             {
                 context.BaseItemProviders.Where(e => e.ItemId == entity.Id).ExecuteDelete();
                 context.BaseItemImageInfos.Where(e => e.ItemId == entity.Id).ExecuteDelete();
+                context.BaseItemMetadataFields.Where(e => e.ItemId == entity.Id).ExecuteDelete();
 
                 if (entity.Images is { Count: > 0 })
                 {
                     context.BaseItemImageInfos.AddRange(entity.Images);
+                }
+
+                if (entity.LockedFields is { Count: > 0 })
+                {
+                    context.BaseItemMetadataFields.AddRange(entity.LockedFields);
                 }
 
                 context.BaseItems.Attach(entity).State = EntityState.Modified;
@@ -1666,18 +1672,17 @@ public sealed class BaseItemRepository
         var tags = filter.Tags.ToList();
         var excludeTags = filter.ExcludeTags.ToList();
 
-        if (filter.IsMovie == true)
+        if (filter.IsMovie.HasValue)
         {
-            if (filter.IncludeItemTypes.Length == 0
-                || filter.IncludeItemTypes.Contains(BaseItemKind.Movie)
-                || filter.IncludeItemTypes.Contains(BaseItemKind.Trailer))
+            var shouldIncludeAllMovieTypes = filter.IsMovie.Value
+                && (filter.IncludeItemTypes.Length == 0
+                    || filter.IncludeItemTypes.Contains(BaseItemKind.Movie)
+                    || filter.IncludeItemTypes.Contains(BaseItemKind.Trailer));
+
+            if (!shouldIncludeAllMovieTypes)
             {
-                baseQuery = baseQuery.Where(e => e.IsMovie);
+                baseQuery = baseQuery.Where(e => e.IsMovie == filter.IsMovie.Value);
             }
-        }
-        else if (filter.IsMovie.HasValue)
-        {
-            baseQuery = baseQuery.Where(e => e.IsMovie == filter.IsMovie);
         }
 
         if (filter.IsSeries.HasValue)

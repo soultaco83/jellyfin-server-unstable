@@ -627,29 +627,29 @@ jobs:
           
           # Update README
           python3 << 'PYEOF'
-import re
-
-with open('README.md', 'r') as f:
-    readme = f.read()
-
-with open('/tmp/pr_section.md', 'r') as f:
-    section = f.read()
-
-pattern = r'## Currently Installed PRs.*?^---$'
-
-if re.search(pattern, readme, re.MULTILINE | re.DOTALL):
-    readme = re.sub(pattern, section.rstrip(), readme, flags=re.MULTILINE | re.DOTALL)
-else:
-    # Insert after first ---
-    if '---' in readme:
-        parts = readme.split('---', 1)
-        readme = parts[0] + '---\n\n' + section + '\n' + parts[1]
-    else:
-        readme = section + '\n' + readme
-
-with open('README.md', 'w') as f:
-    f.write(readme)
-PYEOF
+          import re
+          
+          with open('README.md', 'r') as f:
+              readme = f.read()
+          
+          with open('/tmp/pr_section.md', 'r') as f:
+              section = f.read()
+          
+          pattern = r'## Currently Installed PRs.*?^---$'
+          
+          if re.search(pattern, readme, re.MULTILINE | re.DOTALL):
+              readme = re.sub(pattern, section.rstrip(), readme, flags=re.MULTILINE | re.DOTALL)
+          else:
+              # Insert after first ---
+              if '---' in readme:
+                  parts = readme.split('---', 1)
+                  readme = parts[0] + '---\n\n' + section + '\n' + parts[1]
+              else:
+                  readme = section + '\n' + readme
+          
+          with open('README.md', 'w') as f:
+              f.write(readme)
+          PYEOF
           
           git add README.md .github/*.json
 

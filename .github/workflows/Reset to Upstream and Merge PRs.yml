@@ -1,8 +1,8 @@
 name: Reset to Upstream and Merge PRs
 
 on:
-  schedule:
-    - cron: '0 8 * * *'  # Runs at midnight EST sunday
+  #schedule:
+  #  - cron: '0 8 * * *'  # Runs at midnight EST sunday
   workflow_dispatch:
     inputs:
       pr_numbers:

@@ -1590,14 +1590,15 @@ namespace Emby.Server.Implementations.Session
             return AuthenticateNewSessionInternal(request, false);
         }
 
-        internal async Task<AuthenticationResult> AuthenticateNewSessionInternal(AuthenticationRequest request, bool enforcePassword)
-        {
-            CheckDisposed();
-
-            ArgumentException.ThrowIfNullOrEmpty(request.App);
-            ArgumentException.ThrowIfNullOrEmpty(request.DeviceId);
-            ArgumentException.ThrowIfNullOrEmpty(request.DeviceName);
-            ArgumentException.ThrowIfNullOrEmpty(request.AppVersion);
+		internal async Task<AuthenticationResult> AuthenticateNewSessionInternal(AuthenticationRequest request, bool enforcePassword)
+		{
+			CheckDisposed();
+		
+			ArgumentNullException.ThrowIfNull(request.App);
+			request.App = string.IsNullOrEmpty(request.App) ? "Unknown" : request.App;
+			ArgumentException.ThrowIfNullOrEmpty(request.DeviceId);
+			ArgumentException.ThrowIfNullOrEmpty(request.DeviceName);
+			ArgumentException.ThrowIfNullOrEmpty(request.AppVersion);
 
             User user = null;
             if (!request.UserId.IsEmpty())

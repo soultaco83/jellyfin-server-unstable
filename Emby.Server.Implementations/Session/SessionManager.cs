@@ -1594,8 +1594,7 @@ namespace Emby.Server.Implementations.Session
 		{
 			CheckDisposed();
 		
-			ArgumentNullException.ThrowIfNull(request.App);
-			request.App = string.IsNullOrEmpty(request.App) ? "Unknown" : request.App;
+			request.App ??= "Unknown";
 			ArgumentException.ThrowIfNullOrEmpty(request.DeviceId);
 			ArgumentException.ThrowIfNullOrEmpty(request.DeviceName);
 			ArgumentException.ThrowIfNullOrEmpty(request.AppVersion);

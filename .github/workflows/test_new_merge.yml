@@ -1,0 +1,743 @@
+name: test_new_merge
+
+on:
+  schedule:
+    - cron: '0 8 * * 0'  # Runs at 8:00 AM UTC every Sunday
+  workflow_dispatch:
+    inputs:
+      pr_numbers:
+        description: 'Comma-separated list of PR numbers to merge (leave empty to use DEFAULT_PR_NUMBERS)'
+        required: false
+        default: ''
+      sync_strategy:
+        description: 'How to sync with upstream'
+        required: false
+        type: choice
+        options:
+          - rebase
+          - merge
+          - hard-reset
+        default: 'rebase'
+      conflict_resolution_strategy:
+        description: 'How to resolve PR merge conflicts'
+        required: false
+        type: choice
+        options:
+          - auto-ours
+          - auto-theirs
+          - skip
+        default: 'auto-theirs'
+
+# ============================================================================
+# SYNC STRATEGY EXPLANATION
+# ============================================================================
+# rebase (default):
+#   - Replays YOUR commits on top of upstream/master
+#   - Keeps your custom changes with clean, linear history
+#   - May require conflict resolution if upstream changed same files
+#   - Best for: Maintaining custom modifications long-term
+#
+# merge:
+#   - Merges upstream/master INTO your branch
+#   - Preserves all history, creates merge commit
+#   - Safest option, rarely has issues
+#   - Best for: When you want to avoid any risk of losing changes
+#
+# hard-reset:
+#   - Resets your repo to EXACTLY match upstream
+#   - LOSES all your custom changes (only workflow file is preserved)
+#   - Then merges PRs fresh on top
+#   - Best for: Starting fresh or when your changes are only the PRs
+# ============================================================================
+
+permissions:
+  contents: write
+  pull-requests: read
+
+env:
+  # ============================================================================
+  # PR NUMBERS TO MERGE
+  # ============================================================================
+  # Add PR numbers here (comma-separated). These PRs will be fetched from
+  # upstream jellyfin/jellyfin and merged into your fork.
+  # 
+  # PRs that are merged or closed upstream will be automatically removed from
+  # this list during each workflow run.
+  #
+  # Example: DEFAULT_PR_NUMBERS: '12775,14155,14809'
+  # ============================================================================
+  DEFAULT_PR_NUMBERS: '12775,14155,14809,14879,14935,15159,15370,15377,15433,15490,15666,15718,15722'
+  
+  # Token for authentication (PAT_TOKEN recommended for workflow self-updates)
+  GH_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
+
+jobs:
+  reset-and-merge:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ env.GH_TOKEN }}
+          persist-credentials: true
+
+      - name: Verify authentication
+        run: |
+          if [ -n "${{ secrets.PAT_TOKEN }}" ]; then
+            echo "✅ PAT_TOKEN is configured (workflow self-updates enabled)"
+          else
+            echo "⚠️ Using default GITHUB_TOKEN"
+            echo "Note: For workflow self-updating, set up PAT_TOKEN secret with 'workflow' scope"
+          fi
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git config --global pull.rebase false
+
+      - name: Setup remotes
+        run: |
+          # Add upstream (public repo, no auth needed)
+          git remote add upstream https://github.com/jellyfin/jellyfin.git 2>/dev/null || \
+            git remote set-url upstream https://github.com/jellyfin/jellyfin.git
+          
+          # Set origin with auth token
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          
+          echo "Remotes configured:"
+          git remote -v
+
+      - name: Fetch all remotes
+        run: |
+          echo "📥 Fetching from origin..."
+          git fetch origin --prune
+          
+          echo "📥 Fetching from upstream..."
+          git fetch upstream --prune
+          
+          echo ""
+          echo "Local HEAD:      $(git rev-parse HEAD)"
+          echo "Origin master:   $(git rev-parse origin/master)"
+          echo "Upstream master: $(git rev-parse upstream/master)"
+
+      - name: Determine sync strategy
+        id: strategy
+        run: |
+          STRATEGY="${{ github.event.inputs.sync_strategy || 'rebase' }}"
+          echo "📋 Sync strategy: $STRATEGY"
+          echo "strategy=$STRATEGY" >> $GITHUB_OUTPUT
+
+      # ========================================================================
+      # HARD-RESET STRATEGY
+      # ========================================================================
+      - name: Backup files (hard-reset only)
+        if: steps.strategy.outputs.strategy == 'hard-reset'
+        run: |
+          echo "📦 Backing up custom files for hard-reset..."
+          mkdir -p /tmp/backup/.github/workflows
+          
+          # Backup workflow file
+          if [ -f ".github/workflows/Reset to Upstream and Merge PRs.yml" ]; then
+            cp ".github/workflows/Reset to Upstream and Merge PRs.yml" /tmp/backup/.github/workflows/
+            echo "  ✅ Backed up workflow file"
+          fi
+          
+          # Backup timestamp files
+          [ -f ".github/merged_prs_timestamps.json" ] && cp ".github/merged_prs_timestamps.json" /tmp/backup/.github/
+          [ -f ".github/closed_prs_timestamps.json" ] && cp ".github/closed_prs_timestamps.json" /tmp/backup/.github/
+
+      - name: Hard reset to upstream
+        if: steps.strategy.outputs.strategy == 'hard-reset'
+        id: hard_reset
+        run: |
+          echo "🔄 HARD RESET: Resetting master to upstream/master..."
+          echo "⚠️  This will discard all local changes!"
+          echo ""
+          
+          git checkout master
+          
+          echo "Before: $(git rev-parse HEAD)"
+          git reset --hard upstream/master
+          echo "After:  $(git rev-parse HEAD)"
+          
+          echo "✅ Now matches upstream/master exactly"
+          echo "sync_success=true" >> $GITHUB_OUTPUT
+          echo "sync_method=hard-reset" >> $GITHUB_OUTPUT
+
+      - name: Restore files (hard-reset only)
+        if: steps.strategy.outputs.strategy == 'hard-reset' && steps.hard_reset.outputs.sync_success == 'true'
+        run: |
+          echo "📂 Restoring custom files..."
+          
+          mkdir -p .github/workflows
+          
+          if [ -f "/tmp/backup/.github/workflows/Reset to Upstream and Merge PRs.yml" ]; then
+            cp "/tmp/backup/.github/workflows/Reset to Upstream and Merge PRs.yml" ".github/workflows/"
+            echo "  ✅ Restored workflow file"
+          fi
+          
+          # Restore or create timestamp files
+          if [ -f "/tmp/backup/.github/merged_prs_timestamps.json" ]; then
+            cp "/tmp/backup/.github/merged_prs_timestamps.json" ".github/"
+          else
+            echo "{}" > ".github/merged_prs_timestamps.json"
+          fi
+          
+          if [ -f "/tmp/backup/.github/closed_prs_timestamps.json" ]; then
+            cp "/tmp/backup/.github/closed_prs_timestamps.json" ".github/"
+          else
+            echo "{}" > ".github/closed_prs_timestamps.json"
+          fi
+          
+          git add .github/
+          git commit -m "Restore custom workflow and tracking files" || true
+
+      # ========================================================================
+      # REBASE STRATEGY (Default)
+      # ========================================================================
+      - name: Rebase onto upstream
+        if: steps.strategy.outputs.strategy == 'rebase'
+        id: rebase
+        run: |
+          echo "🔄 REBASE: Rebasing your changes onto upstream/master..."
+          echo "✅ Your custom commits will be preserved on top of upstream"
+          echo ""
+          
+          git checkout master
+          
+          echo "Current HEAD: $(git rev-parse HEAD)"
+          echo "Upstream:     $(git rev-parse upstream/master)"
+          echo ""
+          
+          # Attempt rebase
+          if git rebase upstream/master; then
+            echo ""
+            echo "✅ Rebase successful!"
+            echo "New HEAD: $(git rev-parse HEAD)"
+            echo "sync_success=true" >> $GITHUB_OUTPUT
+            echo "sync_method=rebase" >> $GITHUB_OUTPUT
+          else
+            echo ""
+            echo "⚠️ Rebase conflicts detected!"
+            echo ""
+            
+            # Show conflicted files
+            echo "Conflicted files:"
+            git diff --name-only --diff-filter=U || git status --short | grep "^UU"
+            
+            # Check if conflicts are only in workflow files (auto-resolve)
+            CONFLICT_FILES=$(git status --short | grep "^UU" | awk '{print $2}')
+            WORKFLOW_CONFLICTS=$(echo "$CONFLICT_FILES" | grep '^\.github/workflows/' || true)
+            OTHER_CONFLICTS=$(echo "$CONFLICT_FILES" | grep -v '^\.github/workflows/' || true)
+            
+            if [ -n "$WORKFLOW_CONFLICTS" ] && [ -z "$OTHER_CONFLICTS" ]; then
+              echo "Only workflow file conflicts - auto-resolving with our version..."
+              git checkout --ours .github/workflows/
+              git add .github/workflows/
+              GIT_EDITOR=true git rebase --continue || git rebase --skip
+              echo "sync_success=true" >> $GITHUB_OUTPUT
+              echo "sync_method=rebase" >> $GITHUB_OUTPUT
+            else
+              echo "❌ Non-trivial conflicts detected. Manual resolution required."
+              echo ""
+              echo "To resolve manually:"
+              echo "  1. git fetch upstream"
+              echo "  2. git rebase upstream/master"
+              echo "  3. Resolve conflicts"
+              echo "  4. git rebase --continue"
+              echo "  5. git push --force-with-lease"
+              
+              git rebase --abort
+              echo "sync_success=false" >> $GITHUB_OUTPUT
+              echo "sync_method=rebase" >> $GITHUB_OUTPUT
+              echo "had_conflicts=true" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          fi
+
+      # ========================================================================
+      # MERGE STRATEGY
+      # ========================================================================
+      - name: Merge upstream
+        if: steps.strategy.outputs.strategy == 'merge'
+        id: merge
+        run: |
+          echo "🔄 MERGE: Merging upstream/master into your branch..."
+          echo "✅ All your changes will be preserved"
+          echo ""
+          
+          git checkout master
+          
+          echo "Current HEAD: $(git rev-parse HEAD)"
+          echo "Upstream:     $(git rev-parse upstream/master)"
+          echo ""
+          
+          # Attempt merge
+          if git merge upstream/master --no-ff -m "Merge upstream Jellyfin changes"; then
+            echo ""
+            echo "✅ Merge successful!"
+            echo "sync_success=true" >> $GITHUB_OUTPUT
+            echo "sync_method=merge" >> $GITHUB_OUTPUT
+          else
+            echo ""
+            echo "⚠️ Merge conflicts detected!"
+            
+            # Show conflicted files
+            git diff --name-only --diff-filter=U
+            
+            # Check if conflicts are only in workflow files
+            WORKFLOW_CONFLICTS=$(git diff --name-only --diff-filter=U | grep '^\.github/workflows/' || true)
+            OTHER_CONFLICTS=$(git diff --name-only --diff-filter=U | grep -v '^\.github/workflows/' || true)
+            
+            if [ -n "$WORKFLOW_CONFLICTS" ] && [ -z "$OTHER_CONFLICTS" ]; then
+              echo "Only workflow file conflicts - keeping our version..."
+              git checkout --ours .github/workflows/
+              git add .github/workflows/
+              git commit -m "Merge upstream Jellyfin changes (kept our workflow files)"
+              echo "sync_success=true" >> $GITHUB_OUTPUT
+              echo "sync_method=merge" >> $GITHUB_OUTPUT
+            elif [ -z "$OTHER_CONFLICTS" ]; then
+              # No conflicts remain
+              git commit -m "Merge upstream Jellyfin changes"
+              echo "sync_success=true" >> $GITHUB_OUTPUT
+              echo "sync_method=merge" >> $GITHUB_OUTPUT
+            else
+              echo "❌ Conflicts in non-workflow files. Manual resolution required."
+              echo ""
+              echo "Conflicted files:"
+              echo "$OTHER_CONFLICTS"
+              
+              git merge --abort
+              echo "sync_success=false" >> $GITHUB_OUTPUT
+              echo "sync_method=merge" >> $GITHUB_OUTPUT
+              echo "had_conflicts=true" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          fi
+
+      # ========================================================================
+      # COMMON STEPS (after sync)
+      # ========================================================================
+      - name: Set sync result
+        id: sync_result
+        run: |
+          # Consolidate sync results from whichever strategy ran
+          if [ "${{ steps.hard_reset.outputs.sync_success }}" = "true" ]; then
+            echo "sync_success=true" >> $GITHUB_OUTPUT
+            echo "sync_method=hard-reset" >> $GITHUB_OUTPUT
+          elif [ "${{ steps.rebase.outputs.sync_success }}" = "true" ]; then
+            echo "sync_success=true" >> $GITHUB_OUTPUT
+            echo "sync_method=rebase" >> $GITHUB_OUTPUT
+          elif [ "${{ steps.merge.outputs.sync_success }}" = "true" ]; then
+            echo "sync_success=true" >> $GITHUB_OUTPUT
+            echo "sync_method=merge" >> $GITHUB_OUTPUT
+          else
+            echo "sync_success=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Initialize tracking files
+        if: steps.sync_result.outputs.sync_success == 'true'
+        run: |
+          mkdir -p .github
+          [ ! -f ".github/merged_prs_timestamps.json" ] && echo "{}" > ".github/merged_prs_timestamps.json"
+          [ ! -f ".github/closed_prs_timestamps.json" ] && echo "{}" > ".github/closed_prs_timestamps.json"
+
+      - name: Check PR status against upstream
+        if: steps.sync_result.outputs.sync_success == 'true'
+        id: check_prs
+        run: |
+          # Get PR numbers
+          PR_NUMBERS="${{ github.event.inputs.pr_numbers }}"
+          if [ -z "$PR_NUMBERS" ]; then
+            PR_NUMBERS="${{ env.DEFAULT_PR_NUMBERS }}"
+          fi
+          
+          if [ -z "$PR_NUMBERS" ]; then
+            echo "ℹ️ No PRs configured to merge"
+            echo "prs_to_merge=" >> $GITHUB_OUTPUT
+            echo "merged_prs=" >> $GITHUB_OUTPUT
+            echo "closed_prs=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "🔍 Checking PR status for: $PR_NUMBERS"
+          echo ""
+          
+          IFS=',' read -ra PR_ARRAY <<< "$PR_NUMBERS"
+          
+          MERGED_PRS=""
+          CLOSED_PRS=""
+          OPEN_PRS=""
+          
+          for PR_NUMBER in "${PR_ARRAY[@]}"; do
+            PR_NUMBER=$(echo "$PR_NUMBER" | xargs)
+            [ -z "$PR_NUMBER" ] && continue
+            
+            echo -n "PR #$PR_NUMBER: "
+            
+            # Check git log first (faster)
+            if git log upstream/master --grep="Merge pull request #$PR_NUMBER" --oneline | head -1 | grep -q "#$PR_NUMBER"; then
+              echo "✅ MERGED UPSTREAM"
+              MERGED_PRS="${MERGED_PRS:+$MERGED_PRS,}$PR_NUMBER"
+              continue
+            fi
+            
+            # Check via GitHub API
+            PR_DATA=$(gh pr view "$PR_NUMBER" --repo jellyfin/jellyfin --json state,merged 2>/dev/null || echo '{"state":"UNKNOWN","merged":false}')
+            
+            STATE=$(echo "$PR_DATA" | jq -r '.state // "UNKNOWN"')
+            IS_MERGED=$(echo "$PR_DATA" | jq -r '.merged // false')
+            
+            if [ "$IS_MERGED" = "true" ]; then
+              echo "✅ MERGED UPSTREAM"
+              MERGED_PRS="${MERGED_PRS:+$MERGED_PRS,}$PR_NUMBER"
+            elif [ "$STATE" = "CLOSED" ]; then
+              echo "❌ CLOSED (not merged)"
+              CLOSED_PRS="${CLOSED_PRS:+$CLOSED_PRS,}$PR_NUMBER"
+            elif [ "$STATE" = "OPEN" ]; then
+              echo "⏳ OPEN (will merge)"
+              OPEN_PRS="${OPEN_PRS:+$OPEN_PRS,}$PR_NUMBER"
+            else
+              echo "⚠️ UNKNOWN (will attempt)"
+              OPEN_PRS="${OPEN_PRS:+$OPEN_PRS,}$PR_NUMBER"
+            fi
+          done
+          
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Summary:"
+          echo "  To merge:    ${OPEN_PRS:-none}"
+          echo "  Merged:      ${MERGED_PRS:-none}"
+          echo "  Closed:      ${CLOSED_PRS:-none}"
+          
+          echo "prs_to_merge=$OPEN_PRS" >> $GITHUB_OUTPUT
+          echo "merged_prs=$MERGED_PRS" >> $GITHUB_OUTPUT
+          echo "closed_prs=$CLOSED_PRS" >> $GITHUB_OUTPUT
+
+      - name: Merge open PRs
+        if: steps.sync_result.outputs.sync_success == 'true' && steps.check_prs.outputs.prs_to_merge != ''
+        id: merge_prs
+        run: |
+          PRS_TO_MERGE="${{ steps.check_prs.outputs.prs_to_merge }}"
+          STRATEGY="${{ github.event.inputs.conflict_resolution_strategy || 'auto-theirs' }}"
+          
+          echo "🔀 Merging PRs: $PRS_TO_MERGE"
+          echo "📋 Conflict strategy: $STRATEGY"
+          echo ""
+          
+          IFS=',' read -ra PR_ARRAY <<< "$PRS_TO_MERGE"
+          
+          SUCCESSFUL=""
+          FAILED=""
+          SKIPPED=""
+          
+          for PR_NUMBER in "${PR_ARRAY[@]}"; do
+            PR_NUMBER=$(echo "$PR_NUMBER" | xargs)
+            [ -z "$PR_NUMBER" ] && continue
+            
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "PR #$PR_NUMBER"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Fetch PR
+            if ! git fetch upstream "pull/$PR_NUMBER/head:pr-$PR_NUMBER" 2>/dev/null; then
+              echo "  ❌ Failed to fetch"
+              FAILED="${FAILED:+$FAILED,}$PR_NUMBER"
+              continue
+            fi
+            
+            # Attempt merge
+            if git merge "pr-$PR_NUMBER" --no-ff -m "Merge upstream PR #$PR_NUMBER"; then
+              echo "  ✅ Merged cleanly"
+              SUCCESSFUL="${SUCCESSFUL:+$SUCCESSFUL,}$PR_NUMBER"
+            else
+              echo "  ⚠️ Conflicts detected"
+              
+              case "$STRATEGY" in
+                "auto-ours")
+                  echo "  🔧 Resolving: keeping our version"
+                  git checkout --ours .
+                  git add -A
+                  git commit -m "Merge upstream PR #$PR_NUMBER (conflicts: kept ours)"
+                  SUCCESSFUL="${SUCCESSFUL:+$SUCCESSFUL,}$PR_NUMBER"
+                  ;;
+                "auto-theirs")
+                  echo "  🔧 Resolving: using PR version"
+                  git checkout --theirs .
+                  git add -A
+                  git commit -m "Merge upstream PR #$PR_NUMBER (conflicts: used theirs)"
+                  SUCCESSFUL="${SUCCESSFUL:+$SUCCESSFUL,}$PR_NUMBER"
+                  ;;
+                "skip")
+                  echo "  ⏭️ Skipping"
+                  git merge --abort
+                  SKIPPED="${SKIPPED:+$SKIPPED,}$PR_NUMBER"
+                  ;;
+              esac
+            fi
+            
+            git branch -D "pr-$PR_NUMBER" 2>/dev/null || true
+          done
+          
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Merge Results:"
+          echo "  ✅ Success: ${SUCCESSFUL:-none}"
+          echo "  ❌ Failed:  ${FAILED:-none}"
+          echo "  ⏭️ Skipped: ${SKIPPED:-none}"
+          
+          echo "successful_merges=$SUCCESSFUL" >> $GITHUB_OUTPUT
+          echo "failed_merges=$FAILED" >> $GITHUB_OUTPUT
+          echo "skipped_merges=$SKIPPED" >> $GITHUB_OUTPUT
+
+      - name: Update workflow PR list
+        if: steps.sync_result.outputs.sync_success == 'true'
+        id: update_workflow
+        run: |
+          MERGED_PRS="${{ steps.check_prs.outputs.merged_prs }}"
+          CLOSED_PRS="${{ steps.check_prs.outputs.closed_prs }}"
+          OPEN_PRS="${{ steps.check_prs.outputs.prs_to_merge }}"
+          
+          # Nothing to remove?
+          if [ -z "$MERGED_PRS" ] && [ -z "$CLOSED_PRS" ]; then
+            echo "ℹ️ No PRs to remove from workflow"
+            exit 0
+          fi
+          
+          echo "🔧 Updating workflow PR list..."
+          echo "  Removing (merged): ${MERGED_PRS:-none}"
+          echo "  Removing (closed): ${CLOSED_PRS:-none}"
+          echo "  Keeping:           ${OPEN_PRS:-none}"
+          
+          WORKFLOW_FILE=".github/workflows/Reset to Upstream and Merge PRs.yml"
+          
+          [ ! -f "$WORKFLOW_FILE" ] && { echo "⚠️ Workflow file not found"; exit 0; }
+          
+          # Update DEFAULT_PR_NUMBERS
+          if [ -n "$OPEN_PRS" ]; then
+            sed -i "s|^  DEFAULT_PR_NUMBERS:.*|  DEFAULT_PR_NUMBERS: '$OPEN_PRS'|" "$WORKFLOW_FILE"
+          else
+            sed -i "s|^  DEFAULT_PR_NUMBERS:.*|  DEFAULT_PR_NUMBERS: ''|" "$WORKFLOW_FILE"
+          fi
+          
+          echo "  ✅ Updated workflow file"
+          git add "$WORKFLOW_FILE"
+          echo "workflow_updated=true" >> $GITHUB_OUTPUT
+
+      - name: Update README
+        if: steps.sync_result.outputs.sync_success == 'true'
+        run: |
+          SUCCESSFUL="${{ steps.merge_prs.outputs.successful_merges }}"
+          MERGED_PRS="${{ steps.check_prs.outputs.merged_prs }}"
+          CLOSED_PRS="${{ steps.check_prs.outputs.closed_prs }}"
+          
+          CURRENT_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          MERGED_FILE=".github/merged_prs_timestamps.json"
+          CLOSED_FILE=".github/closed_prs_timestamps.json"
+          
+          # Record timestamps
+          if [ -n "$MERGED_PRS" ]; then
+            IFS=',' read -ra ARR <<< "$MERGED_PRS"
+            for PR in "${ARR[@]}"; do
+              PR=$(echo "$PR" | xargs)
+              [ -z "$PR" ] && continue
+              jq --arg pr "$PR" --arg ts "$CURRENT_TS" '. + {($pr): $ts}' "$MERGED_FILE" > "${MERGED_FILE}.tmp"
+              mv "${MERGED_FILE}.tmp" "$MERGED_FILE"
+            done
+          fi
+          
+          if [ -n "$CLOSED_PRS" ]; then
+            IFS=',' read -ra ARR <<< "$CLOSED_PRS"
+            for PR in "${ARR[@]}"; do
+              PR=$(echo "$PR" | xargs)
+              [ -z "$PR" ] && continue
+              jq --arg pr "$PR" --arg ts "$CURRENT_TS" '. + {($pr): $ts}' "$CLOSED_FILE" > "${CLOSED_FILE}.tmp"
+              mv "${CLOSED_FILE}.tmp" "$CLOSED_FILE"
+            done
+          fi
+          
+          # Get recent (7 days)
+          CUTOFF=$(date -u -d '7 days ago' +"%Y-%m-%dT%H:%M:%SZ")
+          
+          RECENT_MERGED=$(jq -r --arg c "$CUTOFF" 'to_entries | map(select(.value > $c)) | map(.key) | join(",")' "$MERGED_FILE")
+          [ "$RECENT_MERGED" = "null" ] && RECENT_MERGED=""
+          
+          RECENT_CLOSED=$(jq -r --arg c "$CUTOFF" 'to_entries | map(select(.value > $c)) | map(.key) | join(",")' "$CLOSED_FILE")
+          [ "$RECENT_CLOSED" = "null" ] && RECENT_CLOSED=""
+          
+          # Cleanup old entries
+          jq --arg c "$CUTOFF" 'to_entries | map(select(.value > $c)) | from_entries' "$MERGED_FILE" > "${MERGED_FILE}.tmp"
+          mv "${MERGED_FILE}.tmp" "$MERGED_FILE"
+          jq --arg c "$CUTOFF" 'to_entries | map(select(.value > $c)) | from_entries' "$CLOSED_FILE" > "${CLOSED_FILE}.tmp"
+          mv "${CLOSED_FILE}.tmp" "$CLOSED_FILE"
+          
+          # Generate README section
+          {
+            echo "## Currently Installed PRs"
+            echo ""
+            
+            if [ -n "$SUCCESSFUL" ]; then
+              echo "The following upstream PRs are merged into this fork:"
+              echo ""
+              IFS=',' read -ra ARR <<< "$SUCCESSFUL"
+              for PR in "${ARR[@]}"; do
+                PR=$(echo "$PR" | xargs)
+                [ -z "$PR" ] && continue
+                echo "- [PR #$PR](https://github.com/jellyfin/jellyfin/pull/$PR)"
+              done
+            else
+              echo "🎉 No additional PRs. This fork tracks upstream Jellyfin with custom changes."
+            fi
+            
+            if [ -n "$RECENT_MERGED" ] || [ -n "$RECENT_CLOSED" ]; then
+              echo ""
+              echo "### Recently Removed (Last 7 Days)"
+              
+              if [ -n "$RECENT_MERGED" ]; then
+                echo ""
+                echo "**✅ Merged Upstream:**"
+                IFS=',' read -ra ARR <<< "$RECENT_MERGED"
+                for PR in "${ARR[@]}"; do
+                  PR=$(echo "$PR" | xargs)
+                  [ -z "$PR" ] && continue
+                  DT=$(jq -r --arg pr "$PR" '.[$pr] // empty' "$MERGED_FILE" | cut -d'T' -f1)
+                  echo "- ~~[PR #$PR](https://github.com/jellyfin/jellyfin/pull/$PR)~~ ($DT)"
+                done
+              fi
+              
+              if [ -n "$RECENT_CLOSED" ]; then
+                echo ""
+                echo "**❌ Closed:**"
+                IFS=',' read -ra ARR <<< "$RECENT_CLOSED"
+                for PR in "${ARR[@]}"; do
+                  PR=$(echo "$PR" | xargs)
+                  [ -z "$PR" ] && continue
+                  DT=$(jq -r --arg pr "$PR" '.[$pr] // empty' "$CLOSED_FILE" | cut -d'T' -f1)
+                  echo "- ~~[PR #$PR](https://github.com/jellyfin/jellyfin/pull/$PR)~~ ($DT)"
+                done
+              fi
+            fi
+            
+            echo ""
+            echo "---"
+          } > /tmp/pr_section.md
+          
+          # Update README
+          python3 << 'PYEOF'
+import re
+
+with open('README.md', 'r') as f:
+    readme = f.read()
+
+with open('/tmp/pr_section.md', 'r') as f:
+    section = f.read()
+
+pattern = r'## Currently Installed PRs.*?^---$'
+
+if re.search(pattern, readme, re.MULTILINE | re.DOTALL):
+    readme = re.sub(pattern, section.rstrip(), readme, flags=re.MULTILINE | re.DOTALL)
+else:
+    # Insert after first ---
+    if '---' in readme:
+        parts = readme.split('---', 1)
+        readme = parts[0] + '---\n\n' + section + '\n' + parts[1]
+    else:
+        readme = section + '\n' + readme
+
+with open('README.md', 'w') as f:
+    f.write(readme)
+PYEOF
+          
+          git add README.md .github/*.json
+
+      - name: Commit and push
+        if: steps.sync_result.outputs.sync_success == 'true'
+        run: |
+          SYNC_METHOD="${{ steps.sync_result.outputs.sync_method }}"
+          SUCCESSFUL="${{ steps.merge_prs.outputs.successful_merges }}"
+          MERGED="${{ steps.check_prs.outputs.merged_prs }}"
+          CLOSED="${{ steps.check_prs.outputs.closed_prs }}"
+          
+          # Build commit message
+          MSG="Sync with upstream ($SYNC_METHOD)"
+          [ -n "$SUCCESSFUL" ] && MSG="$MSG + PRs: $SUCCESSFUL"
+          [ -n "$MERGED" ] && MSG="$MSG | auto-removed: $MERGED"
+          [ -n "$CLOSED" ] && MSG="$MSG | closed: $CLOSED"
+          
+          git add -A
+          git commit -m "$MSG" || echo "No changes to commit"
+          
+          # Push (force needed for rebase and hard-reset)
+          echo "📤 Pushing to origin..."
+          if [ "$SYNC_METHOD" = "merge" ]; then
+            git push origin master
+          else
+            git push origin master --force-with-lease
+          fi
+          
+          echo "✅ Done!"
+
+      - name: Generate summary
+        if: always()
+        run: |
+          {
+            echo "## 📊 Workflow Summary"
+            echo ""
+            echo "**Sync Strategy:** ${{ steps.strategy.outputs.strategy }}"
+            echo ""
+            
+            if [ "${{ steps.sync_result.outputs.sync_success }}" = "true" ]; then
+              echo "✅ **Sync:** Success (${{ steps.sync_result.outputs.sync_method }})"
+            else
+              echo "❌ **Sync:** Failed"
+              [ "${{ steps.rebase.outputs.had_conflicts }}" = "true" ] && echo "⚠️ Rebase conflicts require manual resolution"
+              [ "${{ steps.merge.outputs.had_conflicts }}" = "true" ] && echo "⚠️ Merge conflicts require manual resolution"
+            fi
+            
+            echo ""
+            echo "### PR Status"
+            
+            SUCCESS="${{ steps.merge_prs.outputs.successful_merges }}"
+            FAILED="${{ steps.merge_prs.outputs.failed_merges }}"
+            SKIPPED="${{ steps.merge_prs.outputs.skipped_merges }}"
+            MERGED="${{ steps.check_prs.outputs.merged_prs }}"
+            CLOSED="${{ steps.check_prs.outputs.closed_prs }}"
+            
+            [ -n "$SUCCESS" ] && echo "- ✅ Merged: $SUCCESS"
+            [ -n "$FAILED" ] && echo "- ❌ Failed: $FAILED"
+            [ -n "$SKIPPED" ] && echo "- ⏭️ Skipped: $SKIPPED"
+            [ -n "$MERGED" ] && echo "- 🎉 Removed (upstream merged): $MERGED"
+            [ -n "$CLOSED" ] && echo "- 🗑️ Removed (closed): $CLOSED"
+            
+            [ "${{ steps.update_workflow.outputs.workflow_updated }}" = "true" ] && echo "" && echo "📝 Workflow file auto-updated"
+            
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Discord notification (failure)
+        if: failure()
+        uses: Ilshidur/action-discord@master
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        with:
+          args: |
+            ❌ **Jellyfin sync failed!**
+            Strategy: ${{ steps.strategy.outputs.strategy }}
+            ${{ steps.rebase.outputs.had_conflicts == 'true' && '⚠️ Rebase conflicts - manual resolution needed' || '' }}
+            ${{ steps.merge.outputs.had_conflicts == 'true' && '⚠️ Merge conflicts - manual resolution needed' || '' }}
+            Logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Discord notification (success)
+        if: success()
+        uses: Ilshidur/action-discord@master
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        with:
+          args: |
+            ✅ **Jellyfin fork synced!**
+            Strategy: ${{ steps.strategy.outputs.strategy }}
+            ${{ steps.merge_prs.outputs.successful_merges && format('🔀 PRs merged: {0}', steps.merge_prs.outputs.successful_merges) || '' }}
+            ${{ steps.check_prs.outputs.merged_prs && format('🎉 Auto-removed (merged): {0}', steps.check_prs.outputs.merged_prs) || '' }}
+            ${{ steps.check_prs.outputs.closed_prs && format('🗑️ Auto-removed (closed): {0}', steps.check_prs.outputs.closed_prs) || '' }}

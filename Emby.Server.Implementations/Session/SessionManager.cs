@@ -1594,6 +1594,31 @@ namespace Emby.Server.Implementations.Session
         {
             CheckDisposed();
 
+            // TEMPORARY FIX: Trying to fix error from jellyseer and infuse when connecting
+            if (string.IsNullOrEmpty(request.App))
+            {
+                request.App = "LegacyClient";
+                _logger.LogWarning("Authentication request received without App parameter from {RemoteEndPoint}. Using default value.", request.RemoteEndPoint);
+            }
+
+            if (string.IsNullOrEmpty(request.DeviceId))
+            {
+                request.DeviceId = $"unknown-{Guid.NewGuid():N}";
+                _logger.LogWarning("Authentication request received without DeviceId from {RemoteEndPoint}. Generated temporary ID.", request.RemoteEndPoint);
+            }
+
+            if (string.IsNullOrEmpty(request.DeviceName))
+            {
+                request.DeviceName = "Unknown Device";
+                _logger.LogWarning("Authentication request received without DeviceName from {RemoteEndPoint}. Using default value.", request.RemoteEndPoint);
+            }
+
+            if (string.IsNullOrEmpty(request.AppVersion))
+            {
+                request.AppVersion = "0.0.0";
+                _logger.LogWarning("Authentication request received without AppVersion from {RemoteEndPoint}. Using default value.", request.RemoteEndPoint);
+            }
+
             ArgumentException.ThrowIfNullOrEmpty(request.App);
             ArgumentException.ThrowIfNullOrEmpty(request.DeviceId);
             ArgumentException.ThrowIfNullOrEmpty(request.DeviceName);

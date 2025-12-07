@@ -155,16 +155,7 @@ namespace Emby.Server.Implementations.Session
         /// Gets all connections.
         /// </summary>
         /// <value>All connections.</value>
-        public IEnumerable<SessionInfo> Sessions
-        {
-            get
-            {
-                return _activeConnections
-                    .OrderByDescending(c => c.Value.LastActivityDate)
-                    .Select(x => x.Value)
-                    .ToList();
-            }
-        }
+        public IEnumerable<SessionInfo> Sessions => _activeConnections.Values.OrderByDescending(c => c.LastActivityDate);
 
         private void OnDeviceManagerDeviceOptionsUpdated(object sender, GenericEventArgs<Tuple<string, DeviceOptions>> e)
         {
@@ -1593,31 +1584,6 @@ namespace Emby.Server.Implementations.Session
         internal async Task<AuthenticationResult> AuthenticateNewSessionInternal(AuthenticationRequest request, bool enforcePassword)
         {
             CheckDisposed();
-
-            // TEMPORARY FIX: Trying to fix error from jellyseer and infuse when connecting
-            if (string.IsNullOrEmpty(request.App))
-            {
-                request.App = "LegacyClient";
-                _logger.LogWarning("Authentication request received without App parameter from {RemoteEndPoint}. Using default value.", request.RemoteEndPoint);
-            }
-
-            if (string.IsNullOrEmpty(request.DeviceId))
-            {
-                request.DeviceId = $"unknown-{Guid.NewGuid():N}";
-                _logger.LogWarning("Authentication request received without DeviceId from {RemoteEndPoint}. Generated temporary ID.", request.RemoteEndPoint);
-            }
-
-            if (string.IsNullOrEmpty(request.DeviceName))
-            {
-                request.DeviceName = "Unknown Device";
-                _logger.LogWarning("Authentication request received without DeviceName from {RemoteEndPoint}. Using default value.", request.RemoteEndPoint);
-            }
-
-            if (string.IsNullOrEmpty(request.AppVersion))
-            {
-                request.AppVersion = "0.0.0";
-                _logger.LogWarning("Authentication request received without AppVersion from {RemoteEndPoint}. Using default value.", request.RemoteEndPoint);
-            }
 
             ArgumentException.ThrowIfNullOrEmpty(request.App);
             ArgumentException.ThrowIfNullOrEmpty(request.DeviceId);

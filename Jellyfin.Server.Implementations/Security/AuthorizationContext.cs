@@ -226,17 +226,44 @@ namespace Jellyfin.Server.Implementations.Security
         /// </summary>
         /// <param name="httpReq">The HTTP request.</param>
         /// <returns>Dictionary{System.StringSystem.String}.</returns>
-        private Dictionary<string, string>? GetAuthorizationDictionary(HttpRequest httpReq)
-        {
-            var auth = httpReq.Headers[HeaderNames.Authorization];
-
-            if (_configurationManager.Configuration.EnableLegacyAuthorization && string.IsNullOrEmpty(auth))
-            {
-                auth = httpReq.Headers["X-Emby-Authorization"];
-            }
-
-            return auth.Count > 0 ? GetAuthorization(auth[0]) : null;
-        }
+		private Dictionary<string, string>? GetAuthorizationDictionary(HttpRequest httpReq)
+		{
+			var auth = httpReq.Headers[HeaderNames.Authorization];
+		
+			if (_configurationManager.Configuration.EnableLegacyAuthorization && string.IsNullOrEmpty(auth))
+			{
+				auth = httpReq.Headers["X-Emby-Authorization"];
+			}
+		
+			if (auth.Count > 0)
+			{
+				var result = GetAuthorization(auth[0]);
+				
+				// TEMPORARY FIX: Support Bearer token and plain token formats for legacy clients
+				if (result == null && !string.IsNullOrEmpty(auth[0]))
+				{
+					var authStr = auth[0]!;
+					
+					// Handle "Bearer <token>" format (e.g., from Jellyseer)
+					if (authStr.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+					{
+						var token = authStr.Substring(7).Trim();
+						return new Dictionary<string, string> { { "Token", token } };
+					}
+					// Handle plain token format (just the token without any prefix)
+					else if (!authStr.StartsWith("MediaBrowser", StringComparison.OrdinalIgnoreCase) 
+							&& !authStr.StartsWith("Emby", StringComparison.OrdinalIgnoreCase))
+					{
+						return new Dictionary<string, string> { { "Token", authStr } };
+					}
+				}
+				// END OF TEMPORARY FIX
+				
+				return result;
+			}
+			
+			return null;
+		}
 
         /// <summary>
         /// Gets the authorization.

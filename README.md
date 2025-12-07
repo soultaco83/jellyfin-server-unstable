@@ -1,6 +1,12 @@
 <h1 align="center">Jellyfin</h1>
 <h3 align="center">The Free Software Media System</h3>
 
+## Currently Installed PRs
+
+🎉 All PRs have been merged upstream or closed! This fork is now clean and matches the upstream Jellyfin repository.
+
+
+---
 ---
 
 <p align="center">

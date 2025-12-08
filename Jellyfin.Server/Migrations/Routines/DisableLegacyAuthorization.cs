@@ -24,7 +24,7 @@ public class DisableLegacyAuthorization : IAsyncMigrationRoutine
     /// <inheritdoc />
     public Task PerformAsync(CancellationToken cancellationToken)
     {
-        _serverConfigurationManager.Configuration.EnableLegacyAuthorization = false;
+        _serverConfigurationManager.Configuration.EnableLegacyAuthorization = true;
         _serverConfigurationManager.SaveConfiguration();
 
         return Task.CompletedTask;

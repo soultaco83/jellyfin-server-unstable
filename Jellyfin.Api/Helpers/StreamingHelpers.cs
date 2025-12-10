@@ -316,7 +316,7 @@ public static class StreamingHelpers
         else
         {
             // Try to infer based on the desired audio codec
-            var audioCodec = state.Request.AudioCodec.ToLowerInvariant();
+            var audioCodec = state.Request.AudioCodec.ToUpperInvariant();
 
             switch (audioCodec)
             {
@@ -330,7 +330,7 @@ public static class StreamingHelpers
                     return ".mp3";
 
                 case "WMA":
-                    return $".wma";
+                    return ".wma";
             }
         }
 

@@ -205,6 +205,7 @@
  - [theshoeshiner](https://github.com/theshoeshiner)
  - [TokerX](https://github.com/TokerX)
  - [GeneMarks](https://github.com/GeneMarks)
+ - [MSalman5230](https://github.com/MSalman5230)
 
 # Emby Contributors
 
@@ -282,3 +283,4 @@
  - [Michael McElroy](https://github.com/mcmcelro)
  - [Soumyadip Auddy](https://github.com/SoumyadipAuddy)
  - [Filip Grzonkowski](https://github.com/grzonu)
+

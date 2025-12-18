@@ -15,8 +15,11 @@ The following PRs are automatically merged into this fork:
 - [Upstream PR #15490](https://github.com/jellyfin/jellyfin/pull/15490)
 - [Upstream PR #15699](https://github.com/jellyfin/jellyfin/pull/15699)
 - [Upstream PR #15722](https://github.com/jellyfin/jellyfin/pull/15722)
-- [Upstream PR #15734](https://github.com/jellyfin/jellyfin/pull/15734)
 - [Upstream PR #15772](https://github.com/jellyfin/jellyfin/pull/15772)
+- [Upstream PR #15797](https://github.com/jellyfin/jellyfin/pull/15797)
+- [Upstream PR #15803](https://github.com/jellyfin/jellyfin/pull/15803)
+- [Upstream PR #15811](https://github.com/jellyfin/jellyfin/pull/15811)
+- [Upstream PR #15820](https://github.com/jellyfin/jellyfin/pull/15820)
 
 ---
 ---

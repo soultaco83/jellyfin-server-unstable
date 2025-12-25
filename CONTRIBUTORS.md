@@ -206,6 +206,7 @@
  - [TokerX](https://github.com/TokerX)
  - [GeneMarks](https://github.com/GeneMarks)
  - [MSalman5230](https://github.com/MSalman5230)
+ - [Kirill Nikiforov](https://github.com/allmazz)
  - [bjorntp](https://github.com/bjorntp)
 
 # Emby Contributors

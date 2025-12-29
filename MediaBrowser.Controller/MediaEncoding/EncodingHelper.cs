@@ -6359,6 +6359,21 @@ namespace MediaBrowser.Controller.MediaEncoding
                     }
                 }
 
+                // Block unsupported H.264 Hi422P and Hi444PP profiles, which can be encoded with 4:2:0 pixel format
+                if (string.Equals(videoStream.Codec, "h264", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (videoStream.Profile.Contains("4:2:2", StringComparison.OrdinalIgnoreCase)
+                        || videoStream.Profile.Contains("4:4:4", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // VideoToolbox on Apple Silicon has H.264 Hi444PP and theoretically also has Hi422P
+                        if (!(hardwareAccelerationType == HardwareAccelerationType.videotoolbox
+                              && RuntimeInformation.OSArchitecture.Equals(Architecture.Arm64)))
+                        {
+                            return null;
+                        }
+                    }
+                }
+
                 var decoder = hardwareAccelerationType switch
                 {
                     HardwareAccelerationType.vaapi => GetVaapiVidDecoder(state, options, videoStream, bitDepth),
@@ -7039,8 +7054,8 @@ namespace MediaBrowser.Controller.MediaEncoding
 
                 if (string.Equals(videoStream.Codec, "av1", StringComparison.OrdinalIgnoreCase))
                 {
-                    var accelType = GetHwaccelType(state, options, "av1", bitDepth, hwSurface);
-                    return accelType + ((!string.IsNullOrEmpty(accelType) && isAfbcSupported) ? " -afbc rga" : string.Empty);
+                    // there's an issue about AV1 AFBC on RK3588, disable it for now until it's fixed upstream
+                    return GetHwaccelType(state, options, "av1", bitDepth, hwSurface);
                 }
             }
 

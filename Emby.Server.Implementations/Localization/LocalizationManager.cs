@@ -38,6 +38,7 @@ namespace Emby.Server.Implementations.Localization
 
         private readonly JsonSerializerOptions _jsonOptions = JsonDefaults.Options;
 
+        private readonly ConcurrentDictionary<string, CultureDto?> _cultureCache = new(StringComparer.OrdinalIgnoreCase);
         private List<CultureDto> _cultures = [];
 
         private FrozenDictionary<string, string> _iso6392BtoT = null!;
@@ -104,80 +105,97 @@ namespace Emby.Server.Implementations.Localization
         private async Task LoadCultures()
         {
             List<CultureDto> list = [];
-            Dictionary<string, string> iso6392BtoTdict = [];
+            Dictionary<string, string> iso6392BtoTdict = new Dictionary<string, string>();
 
-            using var stream = _assembly.GetManifestResourceStream(CulturesPath)
-                ?? throw new InvalidOperationException($"Invalid resource path: '{CulturesPath}'");
-
-            using var reader = new StreamReader(stream);
-            await foreach (var line in reader.ReadAllLinesAsync().ConfigureAwait(false))
+            using var stream = _assembly.GetManifestResourceStream(CulturesPath);
+            if (stream is null)
             {
-                if (string.IsNullOrWhiteSpace(line))
-                {
-                    continue;
-                }
-
-                var parts = line.Split('|');
-                if (parts.Length != 5)
-                {
-                    throw new InvalidDataException($"Invalid culture data found at: '{line}'");
-                }
-
-                string name = parts[3];
-                string displayname = parts[3];
-                if (string.IsNullOrWhiteSpace(displayname))
-                {
-                    continue;
-                }
-
-                string twoCharName = parts[2];
-                if (string.IsNullOrWhiteSpace(twoCharName))
-                {
-                    continue;
-                }
-                else if (twoCharName.Contains('-', StringComparison.OrdinalIgnoreCase))
-                {
-                    name = twoCharName;
-                }
-
-                string[] threeLetterNames;
-                if (string.IsNullOrWhiteSpace(parts[1]))
-                {
-                    threeLetterNames = [parts[0]];
-                }
-                else
-                {
-                    threeLetterNames = [parts[0], parts[1]];
-
-                    // In cases where there are two TLN the first one is ISO 639-2/T and the second one is ISO 639-2/B
-                    // We need ISO 639-2/T for the .NET cultures so we cultivate a dictionary for the translation B->T
-                    iso6392BtoTdict.TryAdd(parts[1], parts[0]);
-                }
-
-                list.Add(new CultureDto(name, displayname, twoCharName, threeLetterNames));
+                throw new InvalidOperationException($"Invalid resource path: '{CulturesPath}'");
             }
+            else
+            {
+                using var reader = new StreamReader(stream);
+                await foreach (var line in reader.ReadAllLinesAsync().ConfigureAwait(false))
+                {
+                    if (string.IsNullOrWhiteSpace(line))
+                    {
+                        continue;
+                    }
 
-            _cultures = list;
-            _iso6392BtoT = iso6392BtoTdict.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+                    var parts = line.Split('|');
+                    if (parts.Length != 5)
+                    {
+                        throw new InvalidDataException($"Invalid culture data found at: '{line}'");
+                    }
+
+                    string name = parts[3];
+                    string displayname = parts[3];
+                    if (string.IsNullOrWhiteSpace(displayname))
+                    {
+                        continue;
+                    }
+
+                    string twoCharName = parts[2];
+                    if (string.IsNullOrWhiteSpace(twoCharName))
+                    {
+                        continue;
+                    }
+                    else if (twoCharName.Contains('-', StringComparison.OrdinalIgnoreCase))
+                    {
+                        name = twoCharName;
+                    }
+
+                    string[] threeLetterNames;
+                    if (string.IsNullOrWhiteSpace(parts[1]))
+                    {
+                        threeLetterNames = [parts[0]];
+                    }
+                    else
+                    {
+                        threeLetterNames = [parts[0], parts[1]];
+
+                        // In cases where there are two TLN the first one is ISO 639-2/T and the second one is ISO 639-2/B
+                        // We need ISO 639-2/T for the .NET cultures so we cultivate a dictionary for the translation B->T
+                        iso6392BtoTdict.TryAdd(parts[1], parts[0]);
+                    }
+
+                    list.Add(new CultureDto(name, displayname, twoCharName, threeLetterNames));
+                }
+
+                _cultureCache.Clear();
+                _cultures = list;
+                _iso6392BtoT = iso6392BtoTdict.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+            }
         }
 
         /// <inheritdoc />
         public CultureDto? FindLanguageInfo(string language)
         {
-            // TODO language should ideally be a ReadOnlySpan but moq cannot mock ref structs
-            for (var i = 0; i < _cultures.Count; i++)
+            if (string.IsNullOrEmpty(language))
             {
-                var culture = _cultures[i];
-                if (language.Equals(culture.DisplayName, StringComparison.OrdinalIgnoreCase)
-                    || language.Equals(culture.Name, StringComparison.OrdinalIgnoreCase)
-                    || culture.ThreeLetterISOLanguageNames.Contains(language, StringComparison.OrdinalIgnoreCase)
-                    || language.Equals(culture.TwoLetterISOLanguageName, StringComparison.OrdinalIgnoreCase))
-                {
-                    return culture;
-                }
+                return null;
             }
 
-            return default;
+            return _cultureCache.GetOrAdd(
+                language,
+                static (lang, cultures) =>
+                {
+                    // TODO language should ideally be a ReadOnlySpan but moq cannot mock ref structs
+                    for (var i = 0; i < cultures.Count; i++)
+                    {
+                        var culture = cultures[i];
+                        if (lang.Equals(culture.DisplayName, StringComparison.OrdinalIgnoreCase)
+                            || lang.Equals(culture.Name, StringComparison.OrdinalIgnoreCase)
+                            || culture.ThreeLetterISOLanguageNames.Contains(lang, StringComparison.OrdinalIgnoreCase)
+                            || lang.Equals(culture.TwoLetterISOLanguageName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return culture;
+                        }
+                    }
+
+                    return null;
+                },
+                _cultures);
         }
 
         /// <inheritdoc />
@@ -237,13 +255,13 @@ namespace Emby.Server.Implementations.Localization
             // A lot of countries don't explicitly have a separate rating for adult content
             if (ratings.All(x => x.RatingScore?.Score != 1000))
             {
-                ratings.Add(new ParentalRating("XXX", new(1000, null)));
+                ratings.Add(new ParentalRating("XXX",  new(1000, null)));
             }
 
             // A lot of countries don't explicitly have a separate rating for banned content
             if (ratings.All(x => x.RatingScore?.Score != 1001))
             {
-                ratings.Add(new ParentalRating("Banned", new(1001, null)));
+                ratings.Add(new ParentalRating("Banned",  new(1001, null)));
             }
 
             return [.. ratings.OrderBy(r => r.RatingScore?.Score).ThenBy(r => r.RatingScore?.SubScore)];
@@ -306,15 +324,19 @@ namespace Emby.Server.Implementations.Localization
             else
             {
                 // Fall back to server default language for ratings check
-                // If it has no ratings, use the US ratings
-                var ratingsDictionary = GetParentalRatingsDictionary() ?? GetParentalRatingsDictionary("us");
+                var ratingsDictionary = GetParentalRatingsDictionary();
                 if (ratingsDictionary is not null && ratingsDictionary.TryGetValue(rating, out ParentalRatingScore? value))
                 {
                     return value;
                 }
             }
 
-            // If we don't find anything, check all ratings systems
+            // If we don't find anything, check all ratings systems, starting with US
+            if (_allParentalRatings.TryGetValue("us", out var usRatings) && usRatings.TryGetValue(rating, out var usValue))
+            {
+                return usValue;
+            }
+
             foreach (var dictionary in _allParentalRatings.Values)
             {
                 if (dictionary.TryGetValue(rating, out var value))

@@ -674,22 +674,17 @@ public sealed class BaseItemRepository
 
                 context.BaseItems.Attach(entity).State = EntityState.Modified;
             }
-        }
 
-        context.SaveChanges();
-
-        foreach (var item in newItems)
-        {
-            // reattach old userData entries
-            var userKeys = item.UserDataKey.ToArray();
             var retentionDate = (DateTime?)null;
             context.UserData
                 .Where(e => e.ItemId == PlaceholderId)
-                .Where(e => userKeys.Contains(e.CustomDataKey))
+                .Where(e => item.UserDataKey.Contains(e.CustomDataKey))
                 .ExecuteUpdate(e => e
                     .SetProperty(f => f.ItemId, item.Item.Id)
                     .SetProperty(f => f.RetentionDate, retentionDate));
         }
+
+        context.SaveChanges();
 
         var itemValueMaps = tuples
             .Select(e => (e.Item, Values: GetItemValuesToSave(e.Item, e.InheritedTags)))

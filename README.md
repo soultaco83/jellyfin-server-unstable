@@ -20,7 +20,6 @@ The following PRs are automatically merged into this fork:
 - [Upstream PR #15811](https://github.com/jellyfin/jellyfin/pull/15811)
 - [Upstream PR #15900](https://github.com/jellyfin/jellyfin/pull/15900)
 - [Upstream PR #15908](https://github.com/jellyfin/jellyfin/pull/15908)
-- [Upstream PR #15916](https://github.com/jellyfin/jellyfin/pull/15916)
 - [Upstream PR #15921](https://github.com/jellyfin/jellyfin/pull/15921)
 
 ### Recently Removed PRs (Last 7 Days)
@@ -29,6 +28,7 @@ The following PRs are automatically merged into this fork:
 The following PRs were automatically removed as they have been merged into upstream Jellyfin:
 
 - ~~[Upstream PR #15797](https://github.com/jellyfin/jellyfin/pull/15797)~~ (merged on 2025-12-28)
+- ~~[Upstream PR #15916](https://github.com/jellyfin/jellyfin/pull/15916)~~ (merged on 2026-01-03)
 
 ---
 ---

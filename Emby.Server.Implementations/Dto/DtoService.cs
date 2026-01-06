@@ -485,6 +485,19 @@ namespace Emby.Server.Implementations.Dto
                         dto.UserData = _userDataRepository.GetUserDataDto(item, dto, user, options);
                     }
                 }
+                else
+                {
+                    // ROKU FIX: Always provide default UserData to prevent null reference crashes
+                    dto.UserData = new UserItemDataDto
+                    {
+                        ItemId = item.Id,
+                        Key = string.Empty,
+                        Played = false,
+                        PlayCount = 0,
+                        IsFavorite = false,
+                        PlaybackPositionTicks = 0
+                    };
+                }
 
                 if (!dto.ChildCount.HasValue && item.SourceType == SourceType.Library)
                 {
@@ -531,6 +544,19 @@ namespace Emby.Server.Implementations.Dto
                         // Fall back to individual fetch
                         dto.UserData = _userDataRepository.GetUserDataDto(item, user);
                     }
+                }
+                else
+                {
+                    // ROKU FIX: Always provide default UserData to prevent null reference crashes
+                    dto.UserData = new UserItemDataDto
+                    {
+                        ItemId = item.Id,
+                        Key = string.Empty,
+                        Played = false,
+                        PlayCount = 0,
+                        IsFavorite = false,
+                        PlaybackPositionTicks = 0
+                    };
                 }
             }
 

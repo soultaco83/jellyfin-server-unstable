@@ -172,25 +172,23 @@ namespace MediaBrowser.MediaEncoding.Subtitles
 
         private async Task<Stream> GetSubtitleStream(SubtitleInfo fileInfo, CancellationToken cancellationToken)
         {
-            if (fileInfo.Protocol == MediaProtocol.Http)
+            if (fileInfo.IsExternal)
             {
-                var result = await DetectCharset(fileInfo.Path, fileInfo.Protocol, cancellationToken).ConfigureAwait(false);
-                var detected = result.Detected;
-
-                if (detected is not null)
+                var stream = await GetStream(fileInfo.Path, fileInfo.Protocol, cancellationToken).ConfigureAwait(false);
+                await using (stream.ConfigureAwait(false))
                 {
-                    _logger.LogDebug("charset {CharSet} detected for {Path}", detected.EncodingName, fileInfo.Path);
+                    var result = await CharsetDetector.DetectFromStreamAsync(stream, cancellationToken).ConfigureAwait(false);
+                    var detected = result.Detected;
+                    stream.Position = 0;
 
-                    using var stream = await _httpClientFactory.CreateClient(NamedClient.Default)
-                        .GetStreamAsync(new Uri(fileInfo.Path), cancellationToken)
-                        .ConfigureAwait(false);
-
-                    await using (stream.ConfigureAwait(false))
+                    if (detected is not null)
                     {
-                      using var reader = new StreamReader(stream, detected.Encoding);
-                      var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+                        _logger.LogDebug("charset {CharSet} detected for {Path}", detected.EncodingName, fileInfo.Path);
 
-                      return new MemoryStream(Encoding.UTF8.GetBytes(text));
+                        using var reader = new StreamReader(stream, detected.Encoding);
+                        var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+
+                        return new MemoryStream(Encoding.UTF8.GetBytes(text));
                     }
                 }
             }
@@ -220,7 +218,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 };
             }
 
-            var currentFormat = subtitleStream.Codec ?? Path.GetExtension(subtitleStream.Path)
+            var currentFormat = (Path.GetExtension(subtitleStream.Path) ?? subtitleStream.Codec)
                 .TrimStart('.');
 
             // Handle PGS subtitles as raw streams for the client to render
@@ -231,46 +229,6 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                     Path = subtitleStream.Path,
                     Protocol = _mediaSourceManager.GetPathProtocol(subtitleStream.Path),
                     Format = "pgssub",
-                    IsExternal = true
-                };
-            }
-
-            // Convert ttml files to srt that ffmpeg can work with it
-            if (string.Equals(currentFormat, "ttml", StringComparison.OrdinalIgnoreCase))
-            {
-                var outputPath = GetSubtitleCachePath(mediaSource, subtitleStream.Index, ".srt");
-
-                using (await _semaphoreLocks.LockAsync(outputPath, cancellationToken).ConfigureAwait(false))
-                {
-                    if (!File.Exists(outputPath))
-                    {
-                        var directory = Path.GetDirectoryName(outputPath);
-                        if (!string.IsNullOrEmpty(directory))
-                        {
-                            Directory.CreateDirectory(directory);
-                        }
-
-                        var protocol = subtitleStream.IsExternal ? MediaProtocol.File : _mediaSourceManager.GetPathProtocol(subtitleStream.Path);
-                        var sourceStream = await GetStream(subtitleStream.Path, protocol, cancellationToken).ConfigureAwait(false);
-
-                        using (sourceStream)
-                        {
-                            var trackInfo = _subtitleParser.Parse(sourceStream, "ttml");
-
-                            using (var targetStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                            {
-                                var writer = GetWriter("srt");
-                                writer.Write(trackInfo, targetStream, cancellationToken);
-                            }
-                        }
-                    }
-                }
-
-                return new SubtitleInfo()
-                {
-                    Path = outputPath,
-                    Protocol = MediaProtocol.File,
-                    Format = "srt",
                     IsExternal = true
                 };
             }
@@ -493,8 +451,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
         {
             if (string.Equals(subtitleStream.Codec, "ass", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(subtitleStream.Codec, "ssa", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(subtitleStream.Codec, "pgssub", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(subtitleStream.Codec, "ttml", StringComparison.OrdinalIgnoreCase))
+                || string.Equals(subtitleStream.Codec, "pgssub", StringComparison.OrdinalIgnoreCase))
             {
                 return subtitleStream.Codec;
             }
@@ -984,44 +941,42 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                     .ConfigureAwait(false);
             }
 
-            var result = await DetectCharset(path, mediaSource.Protocol, cancellationToken).ConfigureAwait(false);
-            var charset = result.Detected?.EncodingName ?? string.Empty;
-
-            // UTF16 is automatically converted to UTF8 by FFmpeg, do not specify a character encoding
-            if ((path.EndsWith(".ass", StringComparison.Ordinal) || path.EndsWith(".ssa", StringComparison.Ordinal) || path.EndsWith(".srt", StringComparison.Ordinal))
-                && (string.Equals(charset, "utf-16le", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(charset, "utf-16be", StringComparison.OrdinalIgnoreCase)))
+            var stream = await GetStream(path, mediaSource.Protocol, cancellationToken).ConfigureAwait(false);
+            await using (stream.ConfigureAwait(false))
             {
-                charset = string.Empty;
+                var result = await CharsetDetector.DetectFromStreamAsync(stream, cancellationToken).ConfigureAwait(false);
+                var charset = result.Detected?.EncodingName ?? string.Empty;
+
+                // UTF16 is automatically converted to UTF8 by FFmpeg, do not specify a character encoding
+                if ((path.EndsWith(".ass", StringComparison.Ordinal) || path.EndsWith(".ssa", StringComparison.Ordinal) || path.EndsWith(".srt", StringComparison.Ordinal))
+                    && (string.Equals(charset, "utf-16le", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(charset, "utf-16be", StringComparison.OrdinalIgnoreCase)))
+                {
+                    charset = string.Empty;
+                }
+
+                _logger.LogDebug("charset {0} detected for {Path}", charset, path);
+
+                return charset;
             }
-
-            _logger.LogDebug("charset {0} detected for {Path}", charset, path);
-
-            return charset;
         }
 
-        private async Task<DetectionResult> DetectCharset(string path, MediaProtocol protocol, CancellationToken cancellationToken)
+        private async Task<Stream> GetStream(string path, MediaProtocol protocol, CancellationToken cancellationToken)
         {
             switch (protocol)
             {
                 case MediaProtocol.Http:
-                {
-                    using var stream = await _httpClientFactory
-                      .CreateClient(NamedClient.Default)
-                      .GetStreamAsync(new Uri(path), cancellationToken)
-                      .ConfigureAwait(false);
-
-                    return await CharsetDetector.DetectFromStreamAsync(stream, cancellationToken).ConfigureAwait(false);
-                }
+                    {
+                        using var response = await _httpClientFactory.CreateClient(NamedClient.Default)
+                            .GetAsync(new Uri(path), cancellationToken)
+                            .ConfigureAwait(false);
+                        return await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                    }
 
                 case MediaProtocol.File:
-                {
-                    return await CharsetDetector.DetectFromFileAsync(path, cancellationToken)
-                                          .ConfigureAwait(false);
-                }
-
+                    return AsyncFile.OpenRead(path);
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(protocol), protocol, "Unsupported protocol");
+                    throw new ArgumentOutOfRangeException(nameof(protocol));
             }
         }
 

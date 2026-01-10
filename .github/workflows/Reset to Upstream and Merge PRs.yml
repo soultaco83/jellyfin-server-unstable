@@ -36,7 +36,7 @@ env:
   # Default PR numbers to use for both scheduled and manual runs (if not specified)
   # This list is automatically updated - merged PRs are removed after successful runs
   # To add new PRs: edit this line and add the PR numbers to the list
-  DEFAULT_PR_NUMBERS: '12775,14809,14927,14935,15159,15370,15377,15490,15699,15722,15762,15803,15811,15900,15908,15921,15926'
+  DEFAULT_PR_NUMBERS: '12775,14809,14927,14935,14957,15159,15370,15377,15490,15699,15722,15762,15803,15811,15900,15908,15921,15926,15944,15965,15970,15979,15986'
   #
   # Token for authentication
   GH_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}

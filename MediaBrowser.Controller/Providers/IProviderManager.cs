@@ -14,6 +14,8 @@ using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
 
+#pragma warning disable CA1002 // Change List to Collection
+
 namespace MediaBrowser.Controller.Providers
 {
     /// <summary>
@@ -101,13 +103,43 @@ namespace MediaBrowser.Controller.Providers
         /// <param name="metadataSavers">Metadata savers to use.</param>
         /// <param name="externalIds">External IDs to use.</param>
         /// <param name="externalUrlProviders">The list of external url providers.</param>
+        /// <param name="similarItemsProviders">Similar items providers to use.</param>
         void AddParts(
             IEnumerable<IImageProvider> imageProviders,
             IEnumerable<IMetadataService> metadataServices,
             IEnumerable<IMetadataProvider> metadataProviders,
             IEnumerable<IMetadataSaver> metadataSavers,
             IEnumerable<IExternalId> externalIds,
-            IEnumerable<IExternalUrlProvider> externalUrlProviders);
+            IEnumerable<IExternalUrlProvider> externalUrlProviders,
+            IEnumerable<ISimilarItemsProvider> similarItemsProviders);
+
+        /// <summary>
+        /// Gets the similar items providers for a specific item type.
+        /// </summary>
+        /// <typeparam name="T">The item type.</typeparam>
+        /// <returns>The list of similar items providers for that type.</returns>
+        List<ISimilarItemsProvider> GetSimilarItemsProviders<T>()
+            where T : BaseItem;
+
+        /// <summary>
+        /// Gets similar items for the specified item.
+        /// </summary>
+        /// <param name="item">The source item to find similar items for.</param>
+        /// <param name="excludeArtistIds">Artist IDs to exclude from results.</param>
+        /// <param name="user">The user context.</param>
+        /// <param name="dtoOptions">The DTO options.</param>
+        /// <param name="limit">Maximum number of results.</param>
+        /// <param name="libraryOptions">The library options for provider configuration.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>The list of similar items.</returns>
+        Task<IReadOnlyList<BaseItem>> GetSimilarItemsAsync(
+            BaseItem item,
+            IReadOnlyList<Guid> excludeArtistIds,
+            Jellyfin.Database.Implementations.Entities.User user,
+            Dto.DtoOptions dtoOptions,
+            int? limit,
+            LibraryOptions libraryOptions,
+            CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets the available remote images.

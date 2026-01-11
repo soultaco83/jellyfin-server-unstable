@@ -118,7 +118,7 @@ namespace MediaBrowser.Controller.Providers
         /// </summary>
         /// <typeparam name="T">The item type.</typeparam>
         /// <returns>The list of similar items providers for that type.</returns>
-        List<ISimilarItemsProvider> GetSimilarItemsProviders<T>()
+        IReadOnlyList<ISimilarItemsProvider> GetSimilarItemsProviders<T>()
             where T : BaseItem;
 
         /// <summary>

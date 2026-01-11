@@ -156,7 +156,7 @@ namespace MediaBrowser.Providers.Manager
         }
 
         /// <inheritdoc/>
-        public List<ISimilarItemsProvider> GetSimilarItemsProviders<T>()
+        public IReadOnlyList<ISimilarItemsProvider> GetSimilarItemsProviders<T>()
             where T : BaseItem
         {
             return _similarItemsProviders

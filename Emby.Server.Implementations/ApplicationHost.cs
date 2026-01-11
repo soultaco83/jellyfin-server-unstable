@@ -543,6 +543,8 @@ namespace Emby.Server.Implementations
 
             serviceCollection.AddSingleton<ISimilarItemsManager, SimilarItemsManager>();
 
+            serviceCollection.AddSingleton<ISearchEngine, SearchEngine>();
+
             serviceCollection.AddSingleton<IWebSocketManager, WebSocketManager>();
 
             serviceCollection.AddSingleton<IImageProcessor, ImageProcessor>();

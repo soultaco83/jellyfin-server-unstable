@@ -47,6 +47,7 @@ namespace Jellyfin.Api.Controllers;
 public class LibraryController : BaseJellyfinApiController
 {
     private readonly IProviderManager _providerManager;
+    private readonly ISimilarItemsManager _similarItemsManager;
     private readonly ILibraryManager _libraryManager;
     private readonly IUserManager _userManager;
     private readonly IDtoService _dtoService;
@@ -60,6 +61,7 @@ public class LibraryController : BaseJellyfinApiController
     /// Initializes a new instance of the <see cref="LibraryController"/> class.
     /// </summary>
     /// <param name="providerManager">Instance of the <see cref="IProviderManager"/> interface.</param>
+    /// <param name="similarItemsManager">Instance of the <see cref="ISimilarItemsManager"/> interface.</param>
     /// <param name="libraryManager">Instance of the <see cref="ILibraryManager"/> interface.</param>
     /// <param name="userManager">Instance of the <see cref="IUserManager"/> interface.</param>
     /// <param name="dtoService">Instance of the <see cref="IDtoService"/> interface.</param>
@@ -70,6 +72,7 @@ public class LibraryController : BaseJellyfinApiController
     /// <param name="serverConfigurationManager">Instance of the <see cref="IServerConfigurationManager"/> interface.</param>
     public LibraryController(
         IProviderManager providerManager,
+        ISimilarItemsManager similarItemsManager,
         ILibraryManager libraryManager,
         IUserManager userManager,
         IDtoService dtoService,
@@ -80,6 +83,7 @@ public class LibraryController : BaseJellyfinApiController
         IServerConfigurationManager serverConfigurationManager)
     {
         _providerManager = providerManager;
+        _similarItemsManager = similarItemsManager;
         _libraryManager = libraryManager;
         _userManager = userManager;
         _dtoService = dtoService;
@@ -766,7 +770,7 @@ public class LibraryController : BaseJellyfinApiController
         // Get library options for provider configuration
         var libraryOptions = _libraryManager.GetLibraryOptions(item);
 
-        var itemsResult = await _providerManager.GetSimilarItemsAsync(
+        var itemsResult = await _similarItemsManager.GetSimilarItemsAsync(
             item,
             excludeArtistIds,
             user,

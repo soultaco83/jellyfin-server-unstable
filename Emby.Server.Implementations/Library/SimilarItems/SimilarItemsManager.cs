@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -26,6 +28,10 @@ namespace Emby.Server.Implementations.Library.SimilarItems;
 /// </summary>
 public class SimilarItemsManager : ISimilarItemsManager
 {
+    private static readonly ConcurrentDictionary<Type, MethodInfo> _genericMethodCache = new();
+    private static readonly MethodInfo _getSimilarItemsInternalMethod = typeof(SimilarItemsManager)
+        .GetMethod(nameof(GetSimilarItemsInternalAsync), BindingFlags.NonPublic | BindingFlags.Instance)!;
+
     private readonly ILogger<SimilarItemsManager> _logger;
     private readonly IServerApplicationPaths _appPaths;
     private readonly ILibraryManager _libraryManager;
@@ -81,9 +87,8 @@ public class SimilarItemsManager : ISimilarItemsManager
         ArgumentNullException.ThrowIfNull(item);
         ArgumentNullException.ThrowIfNull(excludeArtistIds);
 
-        var method = typeof(SimilarItemsManager)
-            .GetMethod(nameof(GetSimilarItemsInternalAsync), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
-            .MakeGenericMethod(item.GetType());
+        var itemType = item.GetType();
+        var method = _genericMethodCache.GetOrAdd(itemType, static type => _getSimilarItemsInternalMethod.MakeGenericMethod(type));
 
         var task = (Task<IReadOnlyList<BaseItem>>)method.Invoke(this, [item, excludeArtistIds, user, dtoOptions, limit, libraryOptions, cancellationToken])!;
         return await task.ConfigureAwait(false);
@@ -141,8 +146,7 @@ public class SimilarItemsManager : ISimilarItemsManager
                     Limit = requestedLimit - allResults.Count,
                     DtoOptions = dtoOptions,
                     ExcludeItemIds = [.. excludeIds],
-                    ExcludeArtistIds = excludeArtistIds,
-                    StartPage = 1
+                    ExcludeArtistIds = excludeArtistIds
                 };
 
                 var items = await localProvider.GetSimilarItemsAsync(item, query, cancellationToken).ConfigureAwait(false);
@@ -160,54 +164,55 @@ public class SimilarItemsManager : ISimilarItemsManager
             {
                 var cachePath = GetSimilarItemsCachePath(provider.Name, typeof(T).Name, item.Id);
 
-                var cachedResponses = await TryReadSimilarItemsCacheAsync(cachePath, cancellationToken).ConfigureAwait(false);
-                if (cachedResponses?.Responses is not null)
+                var cachedReferences = await TryReadSimilarItemsCacheAsync(cachePath, cancellationToken).ConfigureAwait(false);
+                if (cachedReferences is not null)
                 {
-                    foreach (var cachedResponse in cachedResponses.Responses)
-                    {
-                        var resolvedItems = ResolveRemoteResponse(cachedResponse, providerOrder, user, dtoOptions, itemKind, excludeIds);
-                        allResults.AddRange(resolvedItems);
-                    }
-
+                    var resolvedItems = ResolveRemoteReferences(cachedReferences, providerOrder, user, dtoOptions, itemKind, excludeIds);
+                    allResults.AddRange(resolvedItems);
                     continue;
                 }
 
-                var responses = new List<SimilarItemProviderResponse>();
-                TimeSpan? cacheDuration = null;
-                int? nextPage = 0;
-
-                while (allResults.Count < requestedLimit && nextPage is not null && !cancellationToken.IsCancellationRequested)
+                var query = new SimilarItemsQuery
                 {
-                    var query = new SimilarItemsQuery
-                    {
-                        User = user,
-                        Limit = requestedLimit - allResults.Count,
-                        DtoOptions = dtoOptions,
-                        ExcludeItemIds = [.. excludeIds],
-                        ExcludeArtistIds = excludeArtistIds,
-                        StartPage = nextPage.Value
-                    };
+                    User = user,
+                    Limit = requestedLimit - allResults.Count,
+                    DtoOptions = dtoOptions,
+                    ExcludeItemIds = [.. excludeIds],
+                    ExcludeArtistIds = excludeArtistIds
+                };
 
-                    var response = await remoteProvider.GetSimilarItemsAsync(item, query, cancellationToken).ConfigureAwait(false);
-                    if (response is not null && response.Matches.Count > 0)
-                    {
-                        responses.Add(response);
-                        cacheDuration ??= response.CacheDuration;
+                var batchSize = 20;
+                var collectedReferences = new List<SimilarItemReference>();
+                var pendingBatch = new List<SimilarItemReference>();
 
-                        var resolvedItems = ResolveRemoteResponse(response, providerOrder, user, dtoOptions, itemKind, excludeIds);
-                        allResults.AddRange(resolvedItems);
+                await foreach (var reference in remoteProvider.GetSimilarItemsAsync(item, query, cancellationToken).ConfigureAwait(false))
+                {
+                    collectedReferences.Add(reference);
+                    pendingBatch.Add(reference);
 
-                        nextPage = response.NextPage;
-                    }
-                    else
+                    // Resolve batch when full to check if we have enough local matches
+                    if (pendingBatch.Count >= batchSize)
                     {
-                        nextPage = null;
+                        var batchResults = ResolveRemoteReferences(pendingBatch, providerOrder, user, dtoOptions, itemKind, excludeIds);
+                        allResults.AddRange(batchResults);
+                        pendingBatch.Clear();
+
+                        if (allResults.Count >= requestedLimit)
+                        {
+                            break;
+                        }
                     }
                 }
 
-                if (responses.Count > 0 && cacheDuration is not null)
+                if (pendingBatch.Count > 0)
                 {
-                    await SaveSimilarItemsCacheAsync(cachePath, responses, cacheDuration.Value, cancellationToken).ConfigureAwait(false);
+                    var batchResults = ResolveRemoteReferences(pendingBatch, providerOrder, user, dtoOptions, itemKind, excludeIds);
+                    allResults.AddRange(batchResults);
+                }
+
+                if (collectedReferences.Count > 0 && provider.CacheDuration is not null)
+                {
+                    await SaveSimilarItemsCacheAsync(cachePath, collectedReferences, provider.CacheDuration.Value, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
@@ -219,15 +224,15 @@ public class SimilarItemsManager : ISimilarItemsManager
             .ToList();
     }
 
-    private List<(BaseItem Item, float Score)> ResolveRemoteResponse(
-        SimilarItemProviderResponse response,
+    private List<(BaseItem Item, float Score)> ResolveRemoteReferences(
+        IReadOnlyList<SimilarItemReference> references,
         int providerOrder,
         User? user,
         DtoOptions dtoOptions,
         BaseItemKind itemKind,
         HashSet<Guid> excludeIds)
     {
-        if (response.Matches.Count == 0)
+        if (references.Count == 0)
         {
             return [];
         }
@@ -235,7 +240,7 @@ public class SimilarItemsManager : ISimilarItemsManager
         var resolvedById = new Dictionary<Guid, (BaseItem Item, float Score)>();
         var providerLookup = new Dictionary<(string ProviderName, string ProviderId), (float? Score, int Position)>(StringTupleComparer.Instance);
 
-        foreach (var (position, match) in response.Matches.Index())
+        foreach (var (position, match) in references.Index())
         {
             var lookupKey = (match.ProviderName, match.ProviderId);
             if (!providerLookup.TryGetValue(lookupKey, out var existing))
@@ -317,7 +322,7 @@ public class SimilarItemsManager : ISimilarItemsManager
         return Path.Combine(dataPath, $"{itemId.ToString("N", CultureInfo.InvariantCulture)}.json");
     }
 
-    private async Task<SimilarItemsCache?> TryReadSimilarItemsCacheAsync(string cachePath, CancellationToken cancellationToken)
+    private async Task<List<SimilarItemReference>?> TryReadSimilarItemsCacheAsync(string cachePath, CancellationToken cancellationToken)
     {
         var fileInfo = _fileSystem.GetFileSystemInfo(cachePath);
         if (!fileInfo.Exists || fileInfo.Length == 0)
@@ -331,9 +336,9 @@ public class SimilarItemsManager : ISimilarItemsManager
             await using (stream.ConfigureAwait(false))
             {
                 var cache = await JsonSerializer.DeserializeAsync<SimilarItemsCache>(stream, JsonDefaults.Options, cancellationToken).ConfigureAwait(false);
-                if (cache?.Responses is not null && DateTime.UtcNow < cache.ExpiresAt)
+                if (cache?.References is not null && DateTime.UtcNow < cache.ExpiresAt)
                 {
-                    return cache;
+                    return cache.References;
                 }
             }
         }
@@ -349,7 +354,7 @@ public class SimilarItemsManager : ISimilarItemsManager
         return null;
     }
 
-    private async Task SaveSimilarItemsCacheAsync(string cachePath, List<SimilarItemProviderResponse> responses, TimeSpan cacheDuration, CancellationToken cancellationToken)
+    private async Task SaveSimilarItemsCacheAsync(string cachePath, List<SimilarItemReference> references, TimeSpan cacheDuration, CancellationToken cancellationToken)
     {
         try
         {
@@ -361,7 +366,7 @@ public class SimilarItemsManager : ISimilarItemsManager
 
             var cache = new SimilarItemsCache
             {
-                Responses = responses,
+                References = references,
                 ExpiresAt = DateTime.UtcNow.Add(cacheDuration)
             };
 
@@ -379,7 +384,7 @@ public class SimilarItemsManager : ISimilarItemsManager
 
     private sealed class SimilarItemsCache
     {
-        public List<SimilarItemProviderResponse>? Responses { get; set; }
+        public List<SimilarItemReference>? References { get; set; }
 
         public DateTime ExpiresAt { get; set; }
     }

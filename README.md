@@ -28,13 +28,6 @@ The following PRs are automatically merged into this fork:
 - [Upstream PR #15979](https://github.com/jellyfin/jellyfin/pull/15979)
 - [Upstream PR #15986](https://github.com/jellyfin/jellyfin/pull/15986)
 
-### Recently Removed PRs (Last 7 Days)
-
-#### ✅ Merged Upstream
-The following PRs were automatically removed as they have been merged into upstream Jellyfin:
-
-- ~~[Upstream PR #15916](https://github.com/jellyfin/jellyfin/pull/15916)~~ (merged on 2026-01-03)
-
 ---
 ---
 

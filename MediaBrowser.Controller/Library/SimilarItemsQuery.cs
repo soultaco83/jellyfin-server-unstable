@@ -34,9 +34,4 @@ public class SimilarItemsQuery
     /// Gets or sets the artist IDs to exclude from results.
     /// </summary>
     public IReadOnlyList<Guid> ExcludeArtistIds { get; set; } = [];
-
-    /// <summary>
-    /// Gets or sets the starting page for paginated providers.
-    /// </summary>
-    public int StartPage { get; set; } = 1;
 }

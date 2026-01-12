@@ -1,5 +1,5 @@
+using System.Collections.Generic;
 using System.Threading;
-using System.Threading.Tasks;
 using MediaBrowser.Controller.Entities;
 
 namespace MediaBrowser.Controller.Library;
@@ -13,13 +13,13 @@ public interface IRemoteSimilarItemsProvider<TItemType> : ISimilarItemsProvider
     where TItemType : BaseItem
 {
     /// <summary>
-    /// Gets similar item references from an external source for a single page.
+    /// Gets similar item references from an external source as an async stream.
     /// </summary>
     /// <param name="item">The source item to find similar items for.</param>
-    /// <param name="query">The query options (user, limit, exclusions, page, etc.).</param>
+    /// <param name="query">The query options (user, limit, exclusions).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A single page of similar item references, or null if no results.</returns>
-    Task<SimilarItemProviderResponse?> GetSimilarItemsAsync(
+    /// <returns>An async enumerable of similar item references.</returns>
+    IAsyncEnumerable<SimilarItemReference> GetSimilarItemsAsync(
         TItemType item,
         SimilarItemsQuery query,
         CancellationToken cancellationToken);

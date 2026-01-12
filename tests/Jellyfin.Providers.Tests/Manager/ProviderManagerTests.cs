@@ -576,7 +576,8 @@ namespace Jellyfin.Providers.Tests.Manager
                 baseItemManager!,
                 Mock.Of<ILyricManager>(),
                 Mock.Of<IMemoryCache>(),
-                Mock.Of<IMediaSegmentManager>());
+                Mock.Of<IMediaSegmentManager>(),
+                Mock.Of<ISimilarItemsManager>());
 
             return providerManager;
         }
@@ -588,8 +589,7 @@ namespace Jellyfin.Providers.Tests.Manager
             IEnumerable<IMetadataProvider>? metadataProviders = null,
             IEnumerable<IMetadataSaver>? metadataSavers = null,
             IEnumerable<IExternalId>? externalIds = null,
-            IEnumerable<IExternalUrlProvider>? externalUrlProviders = null,
-            IEnumerable<ISimilarItemsProvider>? similarItemsProviders = null)
+            IEnumerable<IExternalUrlProvider>? externalUrlProviders = null)
         {
             imageProviders ??= Array.Empty<IImageProvider>();
             metadataServices ??= Array.Empty<IMetadataService>();
@@ -597,9 +597,8 @@ namespace Jellyfin.Providers.Tests.Manager
             metadataSavers ??= Array.Empty<IMetadataSaver>();
             externalIds ??= Array.Empty<IExternalId>();
             externalUrlProviders ??= Array.Empty<IExternalUrlProvider>();
-            similarItemsProviders ??= Array.Empty<ISimilarItemsProvider>();
 
-            providerManager.AddParts(imageProviders, metadataServices, metadataProviders, metadataSavers, externalIds, externalUrlProviders, similarItemsProviders);
+            providerManager.AddParts(imageProviders, metadataServices, metadataProviders, metadataSavers, externalIds, externalUrlProviders);
         }
 
         /// <summary>

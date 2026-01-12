@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Configuration;
@@ -17,8 +17,6 @@ namespace MediaBrowser.Providers.Plugins.ListenBrainz;
 /// </summary>
 public class ListenBrainzSimilarArtistProvider : IRemoteSimilarItemsProvider<MusicArtist>
 {
-    private static readonly TimeSpan _cacheDuration = TimeSpan.FromDays(14);
-
     private readonly ListenBrainzLabsClient _labsClient;
     private readonly ILogger<ListenBrainzSimilarArtistProvider> _logger;
 
@@ -42,24 +40,21 @@ public class ListenBrainzSimilarArtistProvider : IRemoteSimilarItemsProvider<Mus
     public MetadataPluginType Type => MetadataPluginType.SimilarityProvider;
 
     /// <inheritdoc/>
-    public async Task<SimilarItemProviderResponse?> GetSimilarItemsAsync(
+    public TimeSpan? CacheDuration => TimeSpan.FromDays(14);
+
+    /// <inheritdoc/>
+    public async IAsyncEnumerable<SimilarItemReference> GetSimilarItemsAsync(
         MusicArtist item,
         SimilarItemsQuery query,
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(item);
         ArgumentNullException.ThrowIfNull(query);
 
-        // ListenBrainz doesn't support pagination - only return results on first page (page 0)
-        if (query.StartPage > 0)
-        {
-            return null;
-        }
-
         if (!item.TryGetProviderId(MetadataProvider.MusicBrainzArtist, out var mbidStr) || !Guid.TryParse(mbidStr, out var mbid))
         {
             _logger.LogDebug("No MusicBrainz Artist ID found for {ArtistName}", item.Name);
-            return null;
+            yield break;
         }
 
         IReadOnlyList<Guid> similarMbids;
@@ -70,32 +65,18 @@ public class ListenBrainzSimilarArtistProvider : IRemoteSimilarItemsProvider<Mus
         catch (HttpRequestException ex)
         {
             _logger.LogWarning(ex, "Failed to fetch similar artists from ListenBrainz for {ArtistMbid}", mbid);
-            return null;
-        }
-
-        if (similarMbids.Count == 0)
-        {
-            return null;
+            yield break;
         }
 
         var providerName = MetadataProvider.MusicBrainzArtist.ToString();
-        var matches = new List<SimilarItemReference>();
 
         foreach (var similarMbid in similarMbids)
         {
-            matches.Add(new SimilarItemReference
+            yield return new SimilarItemReference
             {
                 ProviderName = providerName,
                 ProviderId = similarMbid.ToString()
-            });
+            };
         }
-
-        return new SimilarItemProviderResponse
-        {
-            Matches = matches,
-            ProviderName = MetadataProvider.MusicBrainzArtist.ToString(),
-            NextPage = null,
-            CacheDuration = _cacheDuration
-        };
     }
 }

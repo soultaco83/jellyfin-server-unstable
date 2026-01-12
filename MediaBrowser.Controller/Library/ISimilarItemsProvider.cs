@@ -1,3 +1,4 @@
+using System;
 using MediaBrowser.Model.Configuration;
 
 namespace MediaBrowser.Controller.Library;
@@ -16,4 +17,10 @@ public interface ISimilarItemsProvider
     /// Gets the type of the provider.
     /// </summary>
     MetadataPluginType Type { get; }
+
+    /// <summary>
+    /// Gets the cache duration for results from this provider.
+    /// If null, results will not be cached.
+    /// </summary>
+    TimeSpan? CacheDuration => null;
 }

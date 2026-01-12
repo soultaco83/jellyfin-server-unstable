@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Net.Http;
+using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Configuration;
@@ -17,8 +16,6 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV;
 /// </summary>
 public class TmdbSeriesSimilarProvider : IRemoteSimilarItemsProvider<Series>
 {
-    private static readonly TimeSpan _cacheDuration = TimeSpan.FromDays(7);
-
     private readonly TmdbClientManager _tmdbClientManager;
     private readonly ILogger<TmdbSeriesSimilarProvider> _logger;
 
@@ -40,54 +37,53 @@ public class TmdbSeriesSimilarProvider : IRemoteSimilarItemsProvider<Series>
     public MetadataPluginType Type => MetadataPluginType.SimilarityProvider;
 
     /// <inheritdoc/>
-    public async Task<SimilarItemProviderResponse?> GetSimilarItemsAsync(
+    public TimeSpan? CacheDuration => TimeSpan.FromDays(7);
+
+    /// <inheritdoc/>
+    public async IAsyncEnumerable<SimilarItemReference> GetSimilarItemsAsync(
         Series item,
         SimilarItemsQuery query,
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (!item.TryGetProviderId(MetadataProvider.Tmdb, out var tmdbIdStr) || !int.TryParse(tmdbIdStr, CultureInfo.InvariantCulture, out var tmdbId))
         {
-            return null;
+            yield break;
         }
 
         var providerName = MetadataProvider.Tmdb.ToString();
-        var page = query.StartPage;
+        var page = 1;
+        var totalPages = 1;
 
-        IReadOnlyList<TMDbLib.Objects.Search.SearchTv> pageResults;
-        int totalPages;
-        try
+        while (page <= totalPages && !cancellationToken.IsCancellationRequested)
         {
-            (pageResults, totalPages) = await _tmdbClientManager
-                .GetSeriesSimilarPageAsync(tmdbId, page, TmdbUtils.GetImageLanguagesParam(string.Empty), cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to get similar TV shows from TMDb for {TmdbId} page {Page}", tmdbId, page);
-            return null;
-        }
-
-        if (pageResults.Count == 0)
-        {
-            return null;
-        }
-
-        var matches = new List<SimilarItemReference>();
-        foreach (var similar in pageResults)
-        {
-            matches.Add(new SimilarItemReference
+            IReadOnlyList<TMDbLib.Objects.Search.SearchTv> pageResults;
+            try
             {
-                ProviderName = providerName,
-                ProviderId = similar.Id.ToString(CultureInfo.InvariantCulture)
-            });
-        }
+                (pageResults, totalPages) = await _tmdbClientManager
+                    .GetSeriesSimilarPageAsync(tmdbId, page, TmdbUtils.GetImageLanguagesParam(string.Empty), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to get similar TV shows from TMDb for {TmdbId} page {Page}", tmdbId, page);
+                yield break;
+            }
 
-        return new SimilarItemProviderResponse
-        {
-            Matches = matches,
-            ProviderName = Name,
-            NextPage = page + 1 < totalPages ? page + 1 : null,
-            CacheDuration = _cacheDuration
-        };
+            if (pageResults.Count == 0)
+            {
+                yield break;
+            }
+
+            foreach (var similar in pageResults)
+            {
+                yield return new SimilarItemReference
+                {
+                    ProviderName = providerName,
+                    ProviderId = similar.Id.ToString(CultureInfo.InvariantCulture)
+                };
+            }
+
+            page++;
+        }
     }
 }

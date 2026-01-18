@@ -5,7 +5,10 @@
       "Bash(npm install:*)",
       "Bash(find:*)",
       "Bash(xargs:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(git remote add:*)",
+      "Bash(git fetch:*)",
+      "Bash(git rev-list:*)"
     ]
   }
 }

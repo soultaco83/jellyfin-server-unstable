@@ -470,7 +470,7 @@ namespace Emby.Server.Implementations.SyncPlay
                     // Remove stale sessions
                     foreach (var sessionId in staleSessions)
                     {
-                        var session = _sessionManager.GetSessionByAuthenticationToken(sessionId, string.Empty, string.Empty);
+                        var session = _sessionManager.GetSessionByAuthenticationToken(sessionId, string.Empty, string.Empty).GetAwaiter().GetResult();
                         if (session is not null)
                         {
                             _logger.LogInformation("Removing stale session {SessionId} from SyncPlay group {GroupId}.", sessionId, group.GroupId);

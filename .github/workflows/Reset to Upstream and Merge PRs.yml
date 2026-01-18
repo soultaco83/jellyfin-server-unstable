@@ -71,6 +71,38 @@ jobs:
           # Set merge strategy to avoid merge commit messages prompts
           git config pull.rebase false
 
+      - name: Generate patches from custom modifications
+        run: |
+          echo "=== Generating Patches from Custom Modifications ==="
+
+          # Make the script executable
+          if [ -f ".github/scripts/generate-patches.sh" ]; then
+            chmod +x .github/scripts/generate-patches.sh
+            .github/scripts/generate-patches.sh
+          else
+            echo "⚠️  Patch generation script not found, skipping automatic patch generation"
+          fi
+
+          echo "Current patches in .github/patches:"
+          ls -lh .github/patches/ || echo "No patches directory found"
+
+      - name: Backup custom files
+        run: |
+          # Backup patch-related files
+          mkdir -p /tmp/patches-backup
+          if [ -d ".github/patches" ]; then
+            cp -r .github/patches/* /tmp/patches-backup/ || true
+          fi
+
+          if [ -f ".github/patch-definitions.txt" ]; then
+            cp ".github/patch-definitions.txt" "/tmp/patch-definitions.txt" || true
+          fi
+
+          mkdir -p /tmp/scripts-backup
+          if [ -f ".github/scripts/generate-patches.sh" ]; then
+            cp ".github/scripts/generate-patches.sh" "/tmp/scripts-backup/generate-patches.sh" || true
+          fi
+
       - name: Add upstream remote
         run: |
           # Add upstream without authentication (public repo)
@@ -196,6 +228,33 @@ jobs:
               git merge --abort
               exit 1
             fi
+          fi
+
+      - name: Restore and commit patch files
+        if: steps.merge_upstream.outputs.merge_success == 'true'
+        run: |
+          # Restore patch-related files
+          if [ -f "/tmp/patch-definitions.txt" ]; then
+            cp "/tmp/patch-definitions.txt" ".github/patch-definitions.txt"
+            git add ".github/patch-definitions.txt"
+          fi
+
+          mkdir -p .github/scripts
+          if [ -f "/tmp/scripts-backup/generate-patches.sh" ]; then
+            cp "/tmp/scripts-backup/generate-patches.sh" ".github/scripts/generate-patches.sh"
+            git add ".github/scripts/generate-patches.sh"
+          fi
+
+          # Restore the patches directory
+          mkdir -p .github/patches
+          if [ -d "/tmp/patches-backup" ]; then
+            cp -r /tmp/patches-backup/* .github/patches/ || true
+            git add .github/patches/
+          fi
+
+          # Commit patch files if there are changes
+          if ! git diff --cached --quiet; then
+            git commit -m "Restore custom patch files after upstream merge"
           fi
 
       - name: Check PR status (merged, closed, or open)

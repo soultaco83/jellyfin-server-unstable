@@ -10,7 +10,11 @@
       "Bash(git fetch:*)",
       "Bash(git rev-list:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git apply:*)",
+      "Bash(git stash:*)",
+      "Bash(git config:*)",
+      "Bash(unix2dos:*)"
     ]
   }
 }

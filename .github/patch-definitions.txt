@@ -5,6 +5,7 @@
 syncplay-optimizations.patch|Emby.Server.Implementations/SyncPlay/SyncPlayManager.cs|AI optimizations for SyncPlay session management
 syncplay-group.patch|Emby.Server.Implementations/SyncPlay/Group.cs|Enhanced group management with better session handling
 trickplay-optimizations.patch|Jellyfin.Server.Implementations/Trickplay/TrickplayManager.cs|Optimized trickplay generation
+trickplay-timeout-fix.patch|MediaBrowser.MediaEncoding/Encoder/MediaEncoder.cs|Fix trickplay timeout for hardware acceleration initialization
 subtitle-encoder-optimizations.patch|MediaBrowser.MediaEncoding/Subtitles/SubtitleEncoder.cs|Improved subtitle extraction performance
 group-member-enhancements.patch|MediaBrowser.Controller/SyncPlay/GroupMember.cs|Enhanced GroupMember with additional properties
 playqueue-fix.patch|MediaBrowser.Controller/SyncPlay/Queue/PlayQueueManager.cs|PlayQueue manager improvements

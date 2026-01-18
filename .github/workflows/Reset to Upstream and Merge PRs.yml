@@ -257,6 +257,54 @@ jobs:
             git commit -m "Restore custom patch files after upstream merge"
           fi
 
+      - name: Apply custom patches
+        if: steps.merge_upstream.outputs.merge_success == 'true'
+        id: apply_patches
+        run: |
+          echo "=== Applying Custom Patches ==="
+
+          # Make the apply-patches script executable
+          if [ -f ".github/scripts/apply-patches.sh" ]; then
+            chmod +x .github/scripts/apply-patches.sh
+
+            # Run the patch application script
+            if .github/scripts/apply-patches.sh; then
+              echo "✅ All patches applied successfully"
+              echo "patches_applied=true" >> $GITHUB_OUTPUT
+
+              # Stage all changes from patches
+              git add -A
+
+              # Commit the applied patches
+              if ! git diff --cached --quiet; then
+                git commit -m "Apply custom performance and bug fix patches" \
+                  -m "- SyncPlay optimizations (concurrent processing, lock reduction)" \
+                  -m "- Trickplay optimizations (parallel generation, keyframe extraction)" \
+                  -m "- Subtitle extraction improvements (parallel processing)" \
+                  -m "- Bug fixes (off-by-one errors, null safety)" \
+                  -m "- Stale session cleanup" \
+                  -m "" \
+                  -m "All patches auto-applied after upstream merge."
+                echo "changes_committed=true" >> $GITHUB_OUTPUT
+              else
+                echo "No changes to commit from patches"
+              fi
+            else
+              echo "⚠️ Some patches failed to apply - check logs"
+              echo "patches_applied=false" >> $GITHUB_OUTPUT
+
+              # Still commit what we can
+              git add -A
+              if ! git diff --cached --quiet; then
+                git commit -m "Partially apply custom patches (some conflicts detected)"
+                echo "changes_committed=true" >> $GITHUB_OUTPUT
+              fi
+            fi
+          else
+            echo "⚠️ Apply patches script not found, skipping patch application"
+            echo "patches_applied=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Check PR status (merged, closed, or open)
         if: steps.merge_upstream.outputs.merge_success == 'true'
         id: check_pr_status
@@ -816,6 +864,13 @@ jobs:
           if [ "${{ steps.merge_upstream.outputs.merge_success }}" == "true" ]; then
             echo "✅ Successfully merged upstream changes" >> $GITHUB_STEP_SUMMARY
             echo "🔄 All your custom files were preserved automatically" >> $GITHUB_STEP_SUMMARY
+
+            # Add patch application status
+            if [ "${{ steps.apply_patches.outputs.patches_applied }}" == "true" ]; then
+              echo "✨ Custom performance patches applied successfully" >> $GITHUB_STEP_SUMMARY
+            elif [ "${{ steps.apply_patches.outputs.patches_applied }}" == "false" ]; then
+              echo "⚠️ Some patches had conflicts - manual review may be needed" >> $GITHUB_STEP_SUMMARY
+            fi
           elif [ "${{ steps.merge_upstream.outputs.had_conflicts }}" == "true" ]; then
             echo "⚠️ Merge conflicts detected with upstream" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -865,6 +920,7 @@ jobs:
           args: |
             ✅ Successfully merged upstream Jellyfin changes!
             🔄 All your custom files preserved automatically
+            ${{ steps.apply_patches.outputs.patches_applied == 'true' && '✨ Custom performance patches applied' || '' }}
             ${{ env.PR_LIST_UPDATED && '📝 PR list auto-updated - merged/closed PRs removed' || '' }}
             📋 README updated with current PR status
             🔧 Conflict resolution: ${{ github.event.inputs.conflict_resolution_strategy || 'auto-head' }}

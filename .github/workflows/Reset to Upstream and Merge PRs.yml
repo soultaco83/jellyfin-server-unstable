@@ -108,7 +108,7 @@ jobs:
           # Add upstream without authentication (public repo)
           git remote add upstream https://github.com/jellyfin/jellyfin.git || \
           git remote set-url upstream https://github.com/jellyfin/jellyfin.git
-          
+
           # Fix origin URL to include authentication token
           git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git
 
@@ -116,13 +116,13 @@ jobs:
         run: |
           echo "Current remotes:"
           git remote -v
-          
+
           echo "Fetching from origin..."
           git fetch origin
-          
+
           echo "Fetching from upstream..."
           git fetch upstream --prune
-          
+
           echo "Fetched latest changes from all remotes"
 
       - name: Merge upstream changes
@@ -131,9 +131,9 @@ jobs:
           echo "Current branch: $(git branch --show-current)"
           echo "Current commit: $(git rev-parse HEAD)"
           echo "Upstream commit: $(git rev-parse upstream/master)"
-          
+
           git checkout master
-          
+
           # Attempt to merge upstream/master
           if git merge upstream/master --no-ff -m "Merge latest upstream Jellyfin changes"; then
             echo "✅ Successfully merged upstream changes"
@@ -142,18 +142,18 @@ jobs:
           else
             echo "⚠️ Merge conflicts detected in the following files:"
             git diff --name-only --diff-filter=U
-            
+
             # Store conflict info for later
             git diff --name-only --diff-filter=U > /tmp/conflict_files.txt
-            
+
             # Check for modify/delete conflicts in workflow files
             WORKFLOW_CONFLICTS=$(git diff --name-only --diff-filter=U | grep '^\.github/workflows/' || true)
             OTHER_CONFLICTS=$(git diff --name-only --diff-filter=U | grep -v '^\.github/workflows/' || true)
-            
+
             if [ -n "$WORKFLOW_CONFLICTS" ] && [ -z "$OTHER_CONFLICTS" ]; then
               echo "✅ Only workflow file conflicts detected - auto-resolving by keeping them deleted"
               echo "" >> /tmp/conflict_files.txt
-              
+
               # Remove the conflicted workflow files (keep our version = deleted)
               while IFS= read -r file; do
                 if [[ $file == .github/workflows/* ]]; then
@@ -161,7 +161,7 @@ jobs:
                   git rm "$file" 2>/dev/null || true
                 fi
               done < /tmp/conflict_files.txt
-              
+
               # Complete the merge
               git commit -m "Merge latest upstream Jellyfin changes (removed upstream workflow files)"
               echo "✅ Successfully merged upstream changes (auto-resolved workflow conflicts)"
@@ -169,7 +169,7 @@ jobs:
               echo "had_conflicts=false" >> $GITHUB_OUTPUT
             elif [ -n "$WORKFLOW_CONFLICTS" ] && [ -n "$OTHER_CONFLICTS" ]; then
               echo "⚠️ Mixed conflicts detected - auto-resolving workflow files only"
-              
+
               # Remove the conflicted workflow files
               while IFS= read -r file; do
                 if [[ $file == .github/workflows/* ]]; then
@@ -177,7 +177,7 @@ jobs:
                   git rm "$file" 2>/dev/null || true
                 fi
               done < /tmp/conflict_files.txt
-              
+
               # Check if only workflow conflicts remain
               REMAINING_CONFLICTS=$(git diff --name-only --diff-filter=U)
               if [ -z "$REMAINING_CONFLICTS" ]; then
@@ -188,10 +188,10 @@ jobs:
               else
                 echo "❌ Non-workflow conflicts remain:"
                 echo "$REMAINING_CONFLICTS"
-                
+
                 echo "had_conflicts=true" >> $GITHUB_OUTPUT
                 echo "merge_success=false" >> $GITHUB_OUTPUT
-                
+
                 # Create a summary of remaining conflicts
                 echo "## ⚠️ Merge Conflicts Detected" > /tmp/conflict_summary.txt
                 echo "" >> /tmp/conflict_summary.txt
@@ -203,7 +203,7 @@ jobs:
                 echo "" >> /tmp/conflict_summary.txt
                 echo "**Action Required:** Please manually review and resolve these conflicts." >> /tmp/conflict_summary.txt
                 echo "(Workflow file conflicts were auto-resolved by keeping them deleted)" >> /tmp/conflict_summary.txt
-                
+
                 # Abort the merge
                 git merge --abort
                 exit 1
@@ -211,7 +211,7 @@ jobs:
             else
               echo "had_conflicts=true" >> $GITHUB_OUTPUT
               echo "merge_success=false" >> $GITHUB_OUTPUT
-              
+
               # Create a summary of conflicts
               echo "## ⚠️ Merge Conflicts Detected" > /tmp/conflict_summary.txt
               echo "" >> /tmp/conflict_summary.txt
@@ -223,7 +223,7 @@ jobs:
               echo "" >> /tmp/conflict_summary.txt
               echo "**Action Required:** Please manually review and resolve these conflicts." >> /tmp/conflict_summary.txt
               echo "The workflow has been stopped to prevent automatic resolution that might lose your changes." >> /tmp/conflict_summary.txt
-              
+
               # Abort the merge
               git merge --abort
               exit 1
@@ -322,6 +322,8 @@ jobs:
 
           MERGED_UPSTREAM_PRS=""
           CLOSED_PRS=""
+          DRAFT_PRS=""
+          STABLE_BACKPORT_PRS=""
           UNMERGED_PRS=""
 
           for PR_NUMBER in "${PR_ARRAY[@]}"; do
@@ -338,19 +340,35 @@ jobs:
             else
               # Check if PR is closed (but not merged) using GitHub CLI
               echo "Checking PR $PR_NUMBER status via GitHub API..."
-              
-              # Use GitHub CLI to check PR status
-              PR_STATE=$(gh pr view $PR_NUMBER --repo jellyfin/jellyfin --json state,merged -q '.state + ":" + (.merged|tostring)' 2>/dev/null || echo "UNKNOWN:false")
-              
-              STATE=$(echo "$PR_STATE" | cut -d':' -f1)
-              IS_MERGED=$(echo "$PR_STATE" | cut -d':' -f2)
-              
+
+              # Use GitHub CLI to check PR status, draft status, and labels
+              PR_DATA=$(gh pr view $PR_NUMBER --repo jellyfin/jellyfin --json state,merged,isDraft,labels -q '.state + ":" + (.merged|tostring) + ":" + (.isDraft|tostring) + ":" + ([.labels[].name] | join(","))' 2>/dev/null || echo "UNKNOWN:false:false:")
+
+              STATE=$(echo "$PR_DATA" | cut -d':' -f1)
+              IS_MERGED=$(echo "$PR_DATA" | cut -d':' -f2)
+              IS_DRAFT=$(echo "$PR_DATA" | cut -d':' -f3)
+              LABELS=$(echo "$PR_DATA" | cut -d':' -f4-)
+
               if [ "$STATE" = "CLOSED" ] && [ "$IS_MERGED" = "false" ]; then
                 echo "❌ PR $PR_NUMBER is closed (not merged)" >> pr_status.txt
                 if [ -z "$CLOSED_PRS" ]; then
                   CLOSED_PRS="$PR_NUMBER"
                 else
                   CLOSED_PRS="$CLOSED_PRS,$PR_NUMBER"
+                fi
+              elif [ "$IS_DRAFT" = "true" ]; then
+                echo "📝 PR $PR_NUMBER is a draft" >> pr_status.txt
+                if [ -z "$DRAFT_PRS" ]; then
+                  DRAFT_PRS="$PR_NUMBER"
+                else
+                  DRAFT_PRS="$DRAFT_PRS,$PR_NUMBER"
+                fi
+              elif echo "$LABELS" | grep -qi "stable backport"; then
+                echo "🏷️  PR $PR_NUMBER is tagged with 'stable backport'" >> pr_status.txt
+                if [ -z "$STABLE_BACKPORT_PRS" ]; then
+                  STABLE_BACKPORT_PRS="$PR_NUMBER"
+                else
+                  STABLE_BACKPORT_PRS="$STABLE_BACKPORT_PRS,$PR_NUMBER"
                 fi
               elif [ "$STATE" = "OPEN" ] || [ "$STATE" = "UNKNOWN" ]; then
                 echo "⭕ PR $PR_NUMBER needs to be merged" >> pr_status.txt
@@ -370,6 +388,8 @@ jobs:
           # Set outputs for README update
           echo "merged_upstream_prs=$MERGED_UPSTREAM_PRS" >> $GITHUB_OUTPUT
           echo "closed_prs=$CLOSED_PRS" >> $GITHUB_OUTPUT
+          echo "draft_prs=$DRAFT_PRS" >> $GITHUB_OUTPUT
+          echo "stable_backport_prs=$STABLE_BACKPORT_PRS" >> $GITHUB_OUTPUT
           echo "unmerged_prs=$UNMERGED_PRS" >> $GITHUB_OUTPUT
 
       - name: Merge PRs
@@ -386,7 +406,7 @@ jobs:
           echo "" >> merge_results.txt
 
           NEWLY_MERGED_PRS=""
-          
+
           # Parse per-PR strategies if provided
           declare -A PR_STRATEGIES
           if [ -n "${{ github.event.inputs.pr_specific_strategies }}" ]; then
@@ -414,21 +434,21 @@ jobs:
               if git merge-tree $MERGE_BASE HEAD pr-$PR_NUMBER | grep -q '^<<<<<<<'; then
                 # Determine conflict resolution strategy for this PR
                 STRATEGY="${PR_STRATEGIES[$PR_NUMBER]:-${{ github.event.inputs.conflict_resolution_strategy || 'auto-head' }}}"
-                
+
                 echo "⚠️ PR $PR_NUMBER has conflicts - using strategy: $STRATEGY" >> merge_results.txt
-                
+
                 case $STRATEGY in
                   "auto-head")
                     echo "Attempting merge with auto-resolution (favoring HEAD/our version)..."
                     if git merge pr-$PR_NUMBER --no-ff -m "Merge upstream changes from pull request $PR_NUMBER"; then
                       echo "✅ Merged PR $PR_NUMBER successfully (auto-resolved conflicts)" >> merge_results.txt
-                      
+
                       if [ -z "$NEWLY_MERGED_PRS" ]; then
                         NEWLY_MERGED_PRS="$PR_NUMBER"
                       else
                         NEWLY_MERGED_PRS="$NEWLY_MERGED_PRS,$PR_NUMBER"
                       fi
-                      
+
                       git branch -D pr-$PR_NUMBER
                     else
                       # Merge failed, try manual conflict resolution
@@ -437,13 +457,13 @@ jobs:
                       git add .
                       git commit -m "Merge upstream changes from pull request $PR_NUMBER (resolved conflicts favoring HEAD)"
                       echo "✅ Merged PR $PR_NUMBER with manual conflict resolution (HEAD wins)" >> merge_results.txt
-                      
+
                       if [ -z "$NEWLY_MERGED_PRS" ]; then
                         NEWLY_MERGED_PRS="$PR_NUMBER"
                       else
                         NEWLY_MERGED_PRS="$NEWLY_MERGED_PRS,$PR_NUMBER"
                       fi
-                      
+
                       git branch -D pr-$PR_NUMBER
                     fi
                     ;;
@@ -451,13 +471,13 @@ jobs:
                     echo "Attempting merge with auto-resolution (favoring PR version)..."
                     if git merge pr-$PR_NUMBER --no-ff -m "Merge upstream changes from pull request $PR_NUMBER (auto-resolved conflicts favoring PR)"; then
                       echo "✅ Merged PR $PR_NUMBER successfully (auto-resolved conflicts)" >> merge_results.txt
-                      
+
                       if [ -z "$NEWLY_MERGED_PRS" ]; then
                         NEWLY_MERGED_PRS="$PR_NUMBER"
                       else
                         NEWLY_MERGED_PRS="$NEWLY_MERGED_PRS,$PR_NUMBER"
                       fi
-                      
+
                       git branch -D pr-$PR_NUMBER
                     else
                       # Merge failed, try manual conflict resolution
@@ -466,13 +486,13 @@ jobs:
                       git add .
                       git commit -m "Merge upstream changes from pull request $PR_NUMBER (resolved conflicts favoring PR)"
                       echo "✅ Merged PR $PR_NUMBER with manual conflict resolution (PR wins)" >> merge_results.txt
-                      
+
                       if [ -z "$NEWLY_MERGED_PRS" ]; then
                         NEWLY_MERGED_PRS="$PR_NUMBER"
                       else
                         NEWLY_MERGED_PRS="$NEWLY_MERGED_PRS,$PR_NUMBER"
                       fi
-                      
+
                       git branch -D pr-$PR_NUMBER
                     fi
                     ;;
@@ -522,26 +542,34 @@ jobs:
           # Get PR status information
           MERGED_UPSTREAM_PRS="${{ steps.check_pr_status.outputs.merged_upstream_prs }}"
           CLOSED_PRS="${{ steps.check_pr_status.outputs.closed_prs }}"
+          DRAFT_PRS="${{ steps.check_pr_status.outputs.draft_prs }}"
+          STABLE_BACKPORT_PRS="${{ steps.check_pr_status.outputs.stable_backport_prs }}"
           UNMERGED_PRS="${{ steps.check_pr_status.outputs.unmerged_prs }}"
           NEWLY_MERGED_PRS="${{ steps.merge_prs.outputs.newly_merged_prs }}"
 
           echo "Updating README with current PR status..."
           echo "Merged upstream: $MERGED_UPSTREAM_PRS"
           echo "Closed without merge: $CLOSED_PRS"
+          echo "Draft PRs: $DRAFT_PRS"
+          echo "Stable backport PRs: $STABLE_BACKPORT_PRS"
           echo "Still unmerged: $UNMERGED_PRS"
           echo "Newly merged: $NEWLY_MERGED_PRS"
 
           # Load or create timestamp files
           MERGED_PRS_FILE=".github/merged_prs_timestamps.json"
           CLOSED_PRS_FILE=".github/closed_prs_timestamps.json"
-          
+          DRAFT_PRS_FILE=".github/draft_prs_timestamps.json"
+          STABLE_BACKPORT_PRS_FILE=".github/stable_backport_prs_timestamps.json"
+
           # Initialize files if they don't exist
           [ ! -f "$MERGED_PRS_FILE" ] && echo "{}" > "$MERGED_PRS_FILE"
           [ ! -f "$CLOSED_PRS_FILE" ] && echo "{}" > "$CLOSED_PRS_FILE"
+          [ ! -f "$DRAFT_PRS_FILE" ] && echo "{}" > "$DRAFT_PRS_FILE"
+          [ ! -f "$STABLE_BACKPORT_PRS_FILE" ] && echo "{}" > "$STABLE_BACKPORT_PRS_FILE"
 
           # Add current timestamp for newly merged/closed PRs
           CURRENT_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          
+
           # Record merged PRs
           if [ -n "$MERGED_UPSTREAM_PRS" ]; then
             echo "Recording merge timestamps for upstream PRs: $MERGED_UPSTREAM_PRS"
@@ -564,15 +592,37 @@ jobs:
             done
           fi
 
+          # Record draft PRs
+          if [ -n "$DRAFT_PRS" ]; then
+            echo "Recording draft timestamps for draft PRs: $DRAFT_PRS"
+            IFS=',' read -ra DRAFT_ARRAY <<< "$DRAFT_PRS"
+            for PR_NUMBER in "${DRAFT_ARRAY[@]}"; do
+              PR_NUMBER=$(echo "$PR_NUMBER" | xargs)
+              cat "$DRAFT_PRS_FILE" | jq --arg pr "$PR_NUMBER" --arg ts "$CURRENT_TIMESTAMP" '. + {($pr): $ts}' > "${DRAFT_PRS_FILE}.tmp"
+              mv "${DRAFT_PRS_FILE}.tmp" "$DRAFT_PRS_FILE"
+            done
+          fi
+
+          # Record stable backport PRs
+          if [ -n "$STABLE_BACKPORT_PRS" ]; then
+            echo "Recording stable backport timestamps for stable backport PRs: $STABLE_BACKPORT_PRS"
+            IFS=',' read -ra STABLE_BACKPORT_ARRAY <<< "$STABLE_BACKPORT_PRS"
+            for PR_NUMBER in "${STABLE_BACKPORT_ARRAY[@]}"; do
+              PR_NUMBER=$(echo "$PR_NUMBER" | xargs)
+              cat "$STABLE_BACKPORT_PRS_FILE" | jq --arg pr "$PR_NUMBER" --arg ts "$CURRENT_TIMESTAMP" '. + {($pr): $ts}' > "${STABLE_BACKPORT_PRS_FILE}.tmp"
+              mv "${STABLE_BACKPORT_PRS_FILE}.tmp" "$STABLE_BACKPORT_PRS_FILE"
+            done
+          fi
+
           # Filter to show recent changes (last 7 days)
           SEVEN_DAYS_AGO=$(date -u -d '7 days ago' +"%Y-%m-%dT%H:%M:%SZ")
-          
+
           # Get recently merged PRs
           RECENT_MERGED_PRS=""
           if [ -f "$MERGED_PRS_FILE" ]; then
             RECENT_PRS=$(cat "$MERGED_PRS_FILE" | jq -r --arg cutoff "$SEVEN_DAYS_AGO" 'to_entries | map(select(.value > $cutoff)) | map(.key) | join(",")')
             [ "$RECENT_PRS" != "" ] && [ "$RECENT_PRS" != "null" ] && RECENT_MERGED_PRS="$RECENT_PRS"
-            
+
             # Clean up old entries
             cat "$MERGED_PRS_FILE" | jq --arg cutoff "$SEVEN_DAYS_AGO" 'to_entries | map(select(.value > $cutoff)) | from_entries' > "${MERGED_PRS_FILE}.tmp"
             mv "${MERGED_PRS_FILE}.tmp" "$MERGED_PRS_FILE"
@@ -583,14 +633,38 @@ jobs:
           if [ -f "$CLOSED_PRS_FILE" ]; then
             RECENT_PRS=$(cat "$CLOSED_PRS_FILE" | jq -r --arg cutoff "$SEVEN_DAYS_AGO" 'to_entries | map(select(.value > $cutoff)) | map(.key) | join(",")')
             [ "$RECENT_PRS" != "" ] && [ "$RECENT_PRS" != "null" ] && RECENT_CLOSED_PRS="$RECENT_PRS"
-            
+
             # Clean up old entries
             cat "$CLOSED_PRS_FILE" | jq --arg cutoff "$SEVEN_DAYS_AGO" 'to_entries | map(select(.value > $cutoff)) | from_entries' > "${CLOSED_PRS_FILE}.tmp"
             mv "${CLOSED_PRS_FILE}.tmp" "$CLOSED_PRS_FILE"
           fi
 
+          # Get recently draft PRs
+          RECENT_DRAFT_PRS=""
+          if [ -f "$DRAFT_PRS_FILE" ]; then
+            RECENT_PRS=$(cat "$DRAFT_PRS_FILE" | jq -r --arg cutoff "$SEVEN_DAYS_AGO" 'to_entries | map(select(.value > $cutoff)) | map(.key) | join(",")')
+            [ "$RECENT_PRS" != "" ] && [ "$RECENT_PRS" != "null" ] && RECENT_DRAFT_PRS="$RECENT_PRS"
+
+            # Clean up old entries
+            cat "$DRAFT_PRS_FILE" | jq --arg cutoff "$SEVEN_DAYS_AGO" 'to_entries | map(select(.value > $cutoff)) | from_entries' > "${DRAFT_PRS_FILE}.tmp"
+            mv "${DRAFT_PRS_FILE}.tmp" "$DRAFT_PRS_FILE"
+          fi
+
+          # Get recently stable backport PRs
+          RECENT_STABLE_BACKPORT_PRS=""
+          if [ -f "$STABLE_BACKPORT_PRS_FILE" ]; then
+            RECENT_PRS=$(cat "$STABLE_BACKPORT_PRS_FILE" | jq -r --arg cutoff "$SEVEN_DAYS_AGO" 'to_entries | map(select(.value > $cutoff)) | map(.key) | join(",")')
+            [ "$RECENT_PRS" != "" ] && [ "$RECENT_PRS" != "null" ] && RECENT_STABLE_BACKPORT_PRS="$RECENT_PRS"
+
+            # Clean up old entries
+            cat "$STABLE_BACKPORT_PRS_FILE" | jq --arg cutoff "$SEVEN_DAYS_AGO" 'to_entries | map(select(.value > $cutoff)) | from_entries' > "${STABLE_BACKPORT_PRS_FILE}.tmp"
+            mv "${STABLE_BACKPORT_PRS_FILE}.tmp" "$STABLE_BACKPORT_PRS_FILE"
+          fi
+
           echo "Recent merged PRs (last 7 days): $RECENT_MERGED_PRS"
           echo "Recent closed PRs (last 7 days): $RECENT_CLOSED_PRS"
+          echo "Recent draft PRs (last 7 days): $RECENT_DRAFT_PRS"
+          echo "Recent stable backport PRs (last 7 days): $RECENT_STABLE_BACKPORT_PRS"
 
           # Create the PR section for README
           echo "## Currently Installed PRs" > /tmp/pr_section.md
@@ -607,7 +681,7 @@ jobs:
             done
 
             # Add recently removed section
-            if [ -n "$RECENT_MERGED_PRS" ] || [ -n "$RECENT_CLOSED_PRS" ]; then
+            if [ -n "$RECENT_MERGED_PRS" ] || [ -n "$RECENT_CLOSED_PRS" ] || [ -n "$RECENT_DRAFT_PRS" ] || [ -n "$RECENT_STABLE_BACKPORT_PRS" ]; then
               echo "" >> /tmp/pr_section.md
               echo "### Recently Removed PRs (Last 7 Days)" >> /tmp/pr_section.md
             fi
@@ -635,6 +709,32 @@ jobs:
                 PR_NUMBER=$(echo "$PR_NUMBER" | xargs)
                 CLOSE_DATE=$(cat "$CLOSED_PRS_FILE" | jq -r --arg pr "$PR_NUMBER" '.[$pr] // empty' | cut -d'T' -f1)
                 echo "- ~~[Upstream PR #$PR_NUMBER](https://github.com/jellyfin/jellyfin/pull/$PR_NUMBER)~~ (closed on $CLOSE_DATE)" >> /tmp/pr_section.md
+              done
+            fi
+
+            if [ -n "$RECENT_DRAFT_PRS" ]; then
+              echo "" >> /tmp/pr_section.md
+              echo "#### 📝 Moved to Draft" >> /tmp/pr_section.md
+              echo "The following PRs were automatically removed as they were moved to draft status:" >> /tmp/pr_section.md
+              echo "" >> /tmp/pr_section.md
+              IFS=',' read -ra DRAFT_ARRAY <<< "$RECENT_DRAFT_PRS"
+              for PR_NUMBER in "${DRAFT_ARRAY[@]}"; do
+                PR_NUMBER=$(echo "$PR_NUMBER" | xargs)
+                DRAFT_DATE=$(cat "$DRAFT_PRS_FILE" | jq -r --arg pr "$PR_NUMBER" '.[$pr] // empty' | cut -d'T' -f1)
+                echo "- ~~[Upstream PR #$PR_NUMBER](https://github.com/jellyfin/jellyfin/pull/$PR_NUMBER)~~ (became draft on $DRAFT_DATE)" >> /tmp/pr_section.md
+              done
+            fi
+
+            if [ -n "$RECENT_STABLE_BACKPORT_PRS" ]; then
+              echo "" >> /tmp/pr_section.md
+              echo "#### 🏷️  Tagged as Stable Backport" >> /tmp/pr_section.md
+              echo "The following PRs were automatically removed as they were tagged with 'stable backport':" >> /tmp/pr_section.md
+              echo "" >> /tmp/pr_section.md
+              IFS=',' read -ra STABLE_BACKPORT_ARRAY <<< "$RECENT_STABLE_BACKPORT_PRS"
+              for PR_NUMBER in "${STABLE_BACKPORT_ARRAY[@]}"; do
+                PR_NUMBER=$(echo "$PR_NUMBER" | xargs)
+                BACKPORT_DATE=$(cat "$STABLE_BACKPORT_PRS_FILE" | jq -r --arg pr "$PR_NUMBER" '.[$pr] // empty' | cut -d'T' -f1)
+                echo "- ~~[Upstream PR #$PR_NUMBER](https://github.com/jellyfin/jellyfin/pull/$PR_NUMBER)~~ (tagged on $BACKPORT_DATE)" >> /tmp/pr_section.md
               done
             fi
           else
@@ -642,7 +742,7 @@ jobs:
             echo "" >> /tmp/pr_section.md
 
             # Add recently removed section if there are any
-            if [ -n "$RECENT_MERGED_PRS" ] || [ -n "$RECENT_CLOSED_PRS" ]; then
+            if [ -n "$RECENT_MERGED_PRS" ] || [ -n "$RECENT_CLOSED_PRS" ] || [ -n "$RECENT_DRAFT_PRS" ] || [ -n "$RECENT_STABLE_BACKPORT_PRS" ]; then
               echo "### Recently Removed PRs (Last 7 Days)" >> /tmp/pr_section.md
             fi
 
@@ -669,6 +769,32 @@ jobs:
                 PR_NUMBER=$(echo "$PR_NUMBER" | xargs)
                 CLOSE_DATE=$(cat "$CLOSED_PRS_FILE" | jq -r --arg pr "$PR_NUMBER" '.[$pr] // empty' | cut -d'T' -f1)
                 echo "- ~~[Upstream PR #$PR_NUMBER](https://github.com/jellyfin/jellyfin/pull/$PR_NUMBER)~~ (closed on $CLOSE_DATE)" >> /tmp/pr_section.md
+              done
+            fi
+
+            if [ -n "$RECENT_DRAFT_PRS" ]; then
+              echo "" >> /tmp/pr_section.md
+              echo "#### 📝 Moved to Draft" >> /tmp/pr_section.md
+              echo "The following PRs were automatically removed as they were moved to draft status:" >> /tmp/pr_section.md
+              echo "" >> /tmp/pr_section.md
+              IFS=',' read -ra DRAFT_ARRAY <<< "$RECENT_DRAFT_PRS"
+              for PR_NUMBER in "${DRAFT_ARRAY[@]}"; do
+                PR_NUMBER=$(echo "$PR_NUMBER" | xargs)
+                DRAFT_DATE=$(cat "$DRAFT_PRS_FILE" | jq -r --arg pr "$PR_NUMBER" '.[$pr] // empty' | cut -d'T' -f1)
+                echo "- ~~[Upstream PR #$PR_NUMBER](https://github.com/jellyfin/jellyfin/pull/$PR_NUMBER)~~ (became draft on $DRAFT_DATE)" >> /tmp/pr_section.md
+              done
+            fi
+
+            if [ -n "$RECENT_STABLE_BACKPORT_PRS" ]; then
+              echo "" >> /tmp/pr_section.md
+              echo "#### 🏷️  Tagged as Stable Backport" >> /tmp/pr_section.md
+              echo "The following PRs were automatically removed as they were tagged with 'stable backport':" >> /tmp/pr_section.md
+              echo "" >> /tmp/pr_section.md
+              IFS=',' read -ra STABLE_BACKPORT_ARRAY <<< "$RECENT_STABLE_BACKPORT_PRS"
+              for PR_NUMBER in "${STABLE_BACKPORT_ARRAY[@]}"; do
+                PR_NUMBER=$(echo "$PR_NUMBER" | xargs)
+                BACKPORT_DATE=$(cat "$STABLE_BACKPORT_PRS_FILE" | jq -r --arg pr "$PR_NUMBER" '.[$pr] // empty' | cut -d'T' -f1)
+                echo "- ~~[Upstream PR #$PR_NUMBER](https://github.com/jellyfin/jellyfin/pull/$PR_NUMBER)~~ (tagged on $BACKPORT_DATE)" >> /tmp/pr_section.md
               done
             fi
           fi
@@ -717,16 +843,20 @@ jobs:
 
           # Create commit message
           COMMIT_MSG="Update README with current PR list"
-          if [ -n "$RECENT_MERGED_PRS" ] && [ -n "$RECENT_CLOSED_PRS" ]; then
-            COMMIT_MSG="$COMMIT_MSG (merged: $RECENT_MERGED_PRS, closed: $RECENT_CLOSED_PRS)"
-          elif [ -n "$RECENT_MERGED_PRS" ]; then
-            COMMIT_MSG="$COMMIT_MSG (merged upstream: $RECENT_MERGED_PRS)"
-          elif [ -n "$RECENT_CLOSED_PRS" ]; then
-            COMMIT_MSG="$COMMIT_MSG (closed: $RECENT_CLOSED_PRS)"
+          CHANGES=""
+          [ -n "$RECENT_MERGED_PRS" ] && CHANGES="${CHANGES}merged: $RECENT_MERGED_PRS, "
+          [ -n "$RECENT_CLOSED_PRS" ] && CHANGES="${CHANGES}closed: $RECENT_CLOSED_PRS, "
+          [ -n "$RECENT_DRAFT_PRS" ] && CHANGES="${CHANGES}draft: $RECENT_DRAFT_PRS, "
+          [ -n "$RECENT_STABLE_BACKPORT_PRS" ] && CHANGES="${CHANGES}stable-backport: $RECENT_STABLE_BACKPORT_PRS, "
+
+          if [ -n "$CHANGES" ]; then
+            # Remove trailing comma and space
+            CHANGES="${CHANGES%, }"
+            COMMIT_MSG="$COMMIT_MSG ($CHANGES)"
           fi
 
           # Commit the updated README and timestamps files
-          git add README.md "$MERGED_PRS_FILE" "$CLOSED_PRS_FILE"
+          git add README.md "$MERGED_PRS_FILE" "$CLOSED_PRS_FILE" "$DRAFT_PRS_FILE" "$STABLE_BACKPORT_PRS_FILE"
           git commit -m "$COMMIT_MSG" || echo "No changes to commit"
 
       - name: Update PR list in workflow file
@@ -744,27 +874,31 @@ jobs:
 
           echo "Current PR list: $CURRENT_PR_NUMBERS"
 
-          # Get both merged and closed PRs
+          # Get all PRs that should be removed
           MERGED_UPSTREAM_PRS="${{ steps.check_pr_status.outputs.merged_upstream_prs }}"
           CLOSED_PRS="${{ steps.check_pr_status.outputs.closed_prs }}"
-          
-          # Combine merged and closed PRs for removal
+          DRAFT_PRS="${{ steps.check_pr_status.outputs.draft_prs }}"
+          STABLE_BACKPORT_PRS="${{ steps.check_pr_status.outputs.stable_backport_prs }}"
+
+          # Combine all PRs that should be removed
           PRS_TO_REMOVE=""
-          if [ -n "$MERGED_UPSTREAM_PRS" ] && [ -n "$CLOSED_PRS" ]; then
-            PRS_TO_REMOVE="$MERGED_UPSTREAM_PRS,$CLOSED_PRS"
-          elif [ -n "$MERGED_UPSTREAM_PRS" ]; then
-            PRS_TO_REMOVE="$MERGED_UPSTREAM_PRS"
-          elif [ -n "$CLOSED_PRS" ]; then
-            PRS_TO_REMOVE="$CLOSED_PRS"
-          fi
-          
+          for pr_list in "$MERGED_UPSTREAM_PRS" "$CLOSED_PRS" "$DRAFT_PRS" "$STABLE_BACKPORT_PRS"; do
+            if [ -n "$pr_list" ]; then
+              if [ -z "$PRS_TO_REMOVE" ]; then
+                PRS_TO_REMOVE="$pr_list"
+              else
+                PRS_TO_REMOVE="$PRS_TO_REMOVE,$pr_list"
+              fi
+            fi
+          done
+
           if [ -n "$PRS_TO_REMOVE" ]; then
-            echo "PRs to be removed (merged or closed): $PRS_TO_REMOVE"
-            
+            echo "PRs to be removed (merged, closed, draft, or stable backport): $PRS_TO_REMOVE"
+
             # Convert to arrays
             IFS=',' read -ra CURRENT_ARRAY <<< "$CURRENT_PR_NUMBERS"
             IFS=',' read -ra REMOVE_ARRAY <<< "$PRS_TO_REMOVE"
-            
+
             NEW_PR_LIST=""
             REMOVED_COUNT=0
 
@@ -846,7 +980,7 @@ jobs:
         run: |
           # Clean up temporary files
           rm -f pr_status.txt merge_results.txt prs_to_merge.txt
-          
+
           # Check if we have any uncommitted changes (workflow file update)
           if ! git diff --cached --quiet; then
             git commit -m "Auto-update PR list: removed merged/closed PRs"

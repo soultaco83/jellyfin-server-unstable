@@ -44,12 +44,12 @@ namespace MediaBrowser.MediaEncoding.Encoder
         /// <summary>
         /// The default SDR image extraction timeout in milliseconds.
         /// </summary>
-        internal const int DefaultSdrImageExtractionTimeout = 10000;
+        internal const int DefaultSdrImageExtractionTimeout = 60000;
 
         /// <summary>
         /// The default HDR image extraction timeout in milliseconds.
         /// </summary>
-        internal const int DefaultHdrImageExtractionTimeout = 20000;
+        internal const int DefaultHdrImageExtractionTimeout = 120000;
 
         private readonly ILogger<MediaEncoder> _logger;
         private readonly IServerConfigurationManager _configurationManager;

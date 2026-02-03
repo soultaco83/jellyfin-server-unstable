@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using Jellyfin.Data;
 using Jellyfin.Database.Implementations.Enums;
 using MediaBrowser.Controller.Authentication;
-using MediaBrowser.Controller.Devices;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Session;
@@ -20,7 +19,6 @@ namespace Jellyfin.Api.WebSocketListeners;
 public class SessionInfoWebSocketListener : BasePeriodicWebSocketListener<IEnumerable<SessionInfoDto>, WebSocketListenerState>
 {
     private readonly ISessionManager _sessionManager;
-    private readonly IDeviceManager _deviceManager;
     private bool _disposed;
 
     /// <summary>
@@ -28,15 +26,10 @@ public class SessionInfoWebSocketListener : BasePeriodicWebSocketListener<IEnume
     /// </summary>
     /// <param name="logger">Instance of the <see cref="ILogger{SessionInfoWebSocketListener}"/> interface.</param>
     /// <param name="sessionManager">Instance of the <see cref="ISessionManager"/> interface.</param>
-    /// <param name="deviceManager">Instance of the <see cref="IDeviceManager"/> interface.</param>
-    public SessionInfoWebSocketListener(
-        ILogger<SessionInfoWebSocketListener> logger,
-        ISessionManager sessionManager,
-        IDeviceManager deviceManager)
+    public SessionInfoWebSocketListener(ILogger<SessionInfoWebSocketListener> logger, ISessionManager sessionManager)
         : base(logger)
     {
         _sessionManager = sessionManager;
-        _deviceManager = deviceManager;
 
         _sessionManager.SessionStarted += OnSessionManagerSessionStarted;
         _sessionManager.SessionEnded += OnSessionManagerSessionEnded;
@@ -62,24 +55,24 @@ public class SessionInfoWebSocketListener : BasePeriodicWebSocketListener<IEnume
     /// <returns>Task{SystemInfo}.</returns>
     protected override Task<IEnumerable<SessionInfoDto>> GetDataToSend()
     {
-        return Task.FromResult(_sessionManager.Sessions.Select(MapToDto));
+        return Task.FromResult(_sessionManager.Sessions.Select(_sessionManager.ToSessionInfoDto));
     }
 
     /// <inheritdoc />
     protected override Task<IEnumerable<SessionInfoDto>> GetDataToSendForConnection(IWebSocketConnection connection)
     {
+        var sessions = _sessionManager.Sessions;
+
         // For non-admin users, filter the sessions to only include their own sessions
         if (connection.AuthorizationInfo?.User is not null &&
             !connection.AuthorizationInfo.IsApiKey &&
             !connection.AuthorizationInfo.User.HasPermission(PermissionKind.IsAdministrator))
         {
             var userId = connection.AuthorizationInfo.User.Id;
-            return Task.FromResult(_sessionManager.Sessions
-                .Where(s => s.UserId.Equals(userId) || s.ContainsUser(userId))
-                .Select(MapToDto));
+            sessions = sessions.Where(s => s.UserId.Equals(userId) || s.ContainsUser(userId));
         }
 
-        return Task.FromResult(_sessionManager.Sessions.Select(MapToDto));
+        return Task.FromResult(sessions.Select(_sessionManager.ToSessionInfoDto));
     }
 
     /// <inheritdoc />
@@ -148,41 +141,5 @@ public class SessionInfoWebSocketListener : BasePeriodicWebSocketListener<IEnume
     private void OnSessionManagerSessionStarted(object? sender, SessionEventArgs e)
     {
         SendData(true);
-    }
-
-    private SessionInfoDto MapToDto(SessionInfo sessionInfo)
-    {
-        return new SessionInfoDto
-        {
-            PlayState = sessionInfo.PlayState,
-            AdditionalUsers = sessionInfo.AdditionalUsers,
-            Capabilities = _deviceManager.ToClientCapabilitiesDto(sessionInfo.Capabilities),
-            RemoteEndPoint = sessionInfo.RemoteEndPoint,
-            PlayableMediaTypes = sessionInfo.PlayableMediaTypes,
-            Id = sessionInfo.Id,
-            UserId = sessionInfo.UserId,
-            UserName = sessionInfo.UserName,
-            Client = sessionInfo.Client,
-            LastActivityDate = sessionInfo.LastActivityDate,
-            LastPlaybackCheckIn = sessionInfo.LastPlaybackCheckIn,
-            LastPausedDate = sessionInfo.LastPausedDate,
-            DeviceName = sessionInfo.DeviceName,
-            DeviceType = sessionInfo.DeviceType,
-            NowPlayingItem = sessionInfo.NowPlayingItem,
-            NowViewingItem = sessionInfo.NowViewingItem,
-            DeviceId = sessionInfo.DeviceId,
-            ApplicationVersion = sessionInfo.ApplicationVersion,
-            TranscodingInfo = sessionInfo.TranscodingInfo,
-            IsActive = sessionInfo.IsActive,
-            SupportsMediaControl = sessionInfo.SupportsMediaControl,
-            SupportsRemoteControl = sessionInfo.SupportsRemoteControl,
-            NowPlayingQueue = sessionInfo.NowPlayingQueue,
-            NowPlayingQueueFullItems = null, // Explicitly null to reduce payload size
-            HasCustomDeviceName = sessionInfo.HasCustomDeviceName,
-            PlaylistItemId = sessionInfo.PlaylistItemId,
-            ServerId = sessionInfo.ServerId,
-            UserPrimaryImageTag = sessionInfo.UserPrimaryImageTag,
-            SupportedCommands = sessionInfo.SupportedCommands
-        };
     }
 }

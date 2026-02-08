@@ -4,7 +4,7 @@
   </PropertyGroup>
   <!-- Run "dotnet list package (dash,dash)outdated" to see the latest versions of each package.-->
   <ItemGroup Label="Package Dependencies">
-    <PackageVersion Include="AsyncKeyedLock" Version="8.0.0" />
+    <PackageVersion Include="AsyncKeyedLock" Version="8.0.1" />
     <PackageVersion Include="AutoFixture.AutoMoq" Version="4.18.1" />
     <PackageVersion Include="AutoFixture.Xunit2" Version="4.18.1" />
     <PackageVersion Include="AutoFixture" Version="4.18.1" />
@@ -74,12 +74,12 @@
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="[3.116.1]" />
     <PackageVersion Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" />
     <PackageVersion Include="StyleCop.Analyzers" Version="1.2.0-beta.556" />
-    <PackageVersion Include="Svg.Skia" Version="3.2.1" />
+    <PackageVersion Include="Svg.Skia" Version="3.4.1" />
     <PackageVersion Include="Swashbuckle.AspNetCore.ReDoc" Version="6.9.0" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="7.3.2" />
     <PackageVersion Include="System.Text.Json" Version="10.0.2" />
     <PackageVersion Include="TagLibSharp" Version="2.3.0" />
-    <PackageVersion Include="z440.atl.core" Version="7.10.0" />
+    <PackageVersion Include="z440.atl.core" Version="7.11.0" />
     <PackageVersion Include="TMDbLib" Version="2.3.0" />
     <PackageVersion Include="UTF.Unknown" Version="2.6.0" />
     <PackageVersion Include="Xunit.Priority" Version="1.1.6" />

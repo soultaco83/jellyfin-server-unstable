@@ -33,11 +33,7 @@ permissions:
   pull-requests: read
 
 env:
-  # Default PR numbers to use for both scheduled and manual runs (if not specified)
-  # This list is automatically updated - merged PRs are removed after successful runs
-  # To add new PRs: edit this line and add the PR numbers to the list
-  DEFAULT_PR_NUMBERS: '12775,14809,14927,14935,14957,15159,15370,15377,15455,15490,15699,15722,15762,15811,15900,15970,15979,15986,15995,16062,16074,16080,16085,16120,16150,16160,16164,'
-  #
+  # PR list is stored in .github/pr-list.txt
   # Token for authentication
   GH_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
 
@@ -309,10 +305,12 @@ jobs:
         if: steps.merge_upstream.outputs.merge_success == 'true'
         id: check_pr_status
         run: |
-          # Use the input PR numbers if provided, otherwise use the default PR numbers
+          # Use the input PR numbers if provided, otherwise read from .github/pr-list.txt
           PR_NUMBERS="${{ github.event.inputs.pr_numbers }}"
           if [ -z "$PR_NUMBERS" ]; then
-            PR_NUMBERS="${{ env.DEFAULT_PR_NUMBERS }}"
+            if [ -f ".github/pr-list.txt" ]; then
+              PR_NUMBERS=$(grep -v '^#' .github/pr-list.txt | grep -v '^$' | tr '\n' ',' | sed 's/,$//')
+            fi
           fi
 
           IFS=',' read -ra PR_ARRAY <<< "$PR_NUMBERS"
@@ -859,17 +857,19 @@ jobs:
           git add README.md "$MERGED_PRS_FILE" "$CLOSED_PRS_FILE" "$DRAFT_PRS_FILE" "$STABLE_BACKPORT_PRS_FILE"
           git commit -m "$COMMIT_MSG" || echo "No changes to commit"
 
-      - name: Update PR list in workflow file
+      - name: Update PR list file
         if: steps.merge_upstream.outputs.merge_success == 'true'
         run: |
-          set +e  # Don't exit on error, we'll handle errors manually
+          PR_LIST_FILE=".github/pr-list.txt"
 
           echo "Starting PR list update process..."
 
-          # Read current PR list
+          # Read current PR list from file (or from manual input)
           CURRENT_PR_NUMBERS="${{ github.event.inputs.pr_numbers }}"
           if [ -z "$CURRENT_PR_NUMBERS" ]; then
-            CURRENT_PR_NUMBERS="${{ env.DEFAULT_PR_NUMBERS }}"
+            if [ -f "$PR_LIST_FILE" ]; then
+              CURRENT_PR_NUMBERS=$(grep -v '^#' "$PR_LIST_FILE" | grep -v '^$' | tr '\n' ',' | sed 's/,$//')
+            fi
           fi
 
           echo "Current PR list: $CURRENT_PR_NUMBERS"
@@ -895,7 +895,6 @@ jobs:
           if [ -n "$PRS_TO_REMOVE" ]; then
             echo "PRs to be removed (merged, closed, draft, or stable backport): $PRS_TO_REMOVE"
 
-            # Convert to arrays
             IFS=',' read -ra CURRENT_ARRAY <<< "$CURRENT_PR_NUMBERS"
             IFS=',' read -ra REMOVE_ARRAY <<< "$PRS_TO_REMOVE"
 
@@ -906,13 +905,12 @@ jobs:
               PR=$(echo $PR | xargs)  # Trim whitespace
               SHOULD_REMOVE=false
 
-              # Check if this PR should be removed
               for REMOVE_PR in "${REMOVE_ARRAY[@]}"; do
                 REMOVE_PR=$(echo $REMOVE_PR | xargs)
                 if [ "$PR" == "$REMOVE_PR" ]; then
                   SHOULD_REMOVE=true
                   ((REMOVED_COUNT++))
-                  echo "  Will remove PR $PR from list"
+                  echo "  Removing PR $PR from list"
                   break
                 fi
               done
@@ -926,48 +924,20 @@ jobs:
               fi
             done
 
-            # Update the workflow file if PRs were removed
+            # Update pr-list.txt if PRs were removed
             if [ "$NEW_PR_LIST" != "$CURRENT_PR_NUMBERS" ]; then
-              echo "Updating PR list in workflow file..."
+              echo "Updating $PR_LIST_FILE..."
               echo "Old list: $CURRENT_PR_NUMBERS"
               echo "New list: $NEW_PR_LIST"
               echo "Removed $REMOVED_COUNT PR(s)"
 
-              # Update the workflow file
-              WORKFLOW_FILE=".github/workflows/Reset to Upstream and Merge PRs.yml"
+              # Rewrite the file (preserve comment header, one PR per line)
+              printf '# PR numbers to merge into this fork from jellyfin/jellyfin\n# Add/remove PR numbers here - workflow will read and update this file automatically\n' > "$PR_LIST_FILE"
+              echo "$NEW_PR_LIST" | tr ',' '\n' | grep -v '^$' | xargs -I{} echo {} >> "$PR_LIST_FILE"
 
-              if [ -f "$WORKFLOW_FILE" ]; then
-                # Create a backup
-                cp "$WORKFLOW_FILE" "${WORKFLOW_FILE}.bak"
-
-                # Update the PR numbers
-                sed -i "s|DEFAULT_PR_NUMBERS: '12775,14155,14809,14879,14935,15159,15370,15377,15433,15476,15490,15538'|" "$WORKFLOW_FILE"
-
-                # Verify the change was made
-                if grep -q "DEFAULT_PR_NUMBERS: '12775,14155,14809,14879,14935,15159,15370,15377,15433,15476,15490,15538'" "$WORKFLOW_FILE"; then
-                  echo "Successfully updated workflow file"
-                  echo "PR_LIST_UPDATED=true" >> $GITHUB_ENV
-
-                  # Show the updated line
-                  grep "DEFAULT_PR_NUMBERS:" "$WORKFLOW_FILE"
-
-                  # Stage the change for commit
-                  git add "$WORKFLOW_FILE"
-
-                  # Remove backup
-                  rm -f "${WORKFLOW_FILE}.bak"
-                else
-                  echo "Error: Failed to update workflow file"
-                  echo "Looking for DEFAULT_PR_NUMBERS line:"
-                  grep "DEFAULT_PR_NUMBERS:" "$WORKFLOW_FILE" || echo "Line not found!"
-                  # Restore from backup
-                  mv "${WORKFLOW_FILE}.bak" "$WORKFLOW_FILE"
-                  exit 1
-                fi
-              else
-                echo "Warning: Workflow file not found at $WORKFLOW_FILE"
-                exit 1
-              fi
+              git add "$PR_LIST_FILE"
+              echo "PR_LIST_UPDATED=true" >> $GITHUB_ENV
+              echo "Successfully updated $PR_LIST_FILE"
             else
               echo "No PRs to remove from the list"
             fi
@@ -1042,7 +1012,7 @@ jobs:
           args: |
             ❌ Upstream merge workflow failed!
             ${{ steps.merge_upstream.outputs.had_conflicts == 'true' && '⚠️ Merge conflicts detected - manual resolution required' || 'See workflow logs for details' }}
-            PRs attempted: ${{ github.event.inputs.pr_numbers || env.DEFAULT_PR_NUMBERS }}
+            PRs attempted: ${{ github.event.inputs.pr_numbers || 'see .github/pr-list.txt' }}
             Logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Send Discord notification on success

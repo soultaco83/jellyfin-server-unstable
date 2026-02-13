@@ -55,6 +55,14 @@ namespace MediaBrowser.Controller.Library
         UserItemDataDto? GetUserDataDto(BaseItem item, User user);
 
         /// <summary>
+        /// Gets user data for multiple items in a single batch operation.
+        /// </summary>
+        /// <param name="items">The items to get user data for.</param>
+        /// <param name="user">The user.</param>
+        /// <returns>A dictionary mapping item IDs to their user data.</returns>
+        Dictionary<Guid, UserItemData> GetUserDataBatch(IReadOnlyList<BaseItem> items, User user);
+
+        /// <summary>
         /// Gets the user data dto.
         /// </summary>
         /// <param name="item">Item to use.</param>
@@ -63,28 +71,6 @@ namespace MediaBrowser.Controller.Library
         /// <param name="options">Dto options to use.</param>
         /// <returns>User data dto.</returns>
         UserItemDataDto? GetUserDataDto(BaseItem item, BaseItemDto? itemDto, User user, DtoOptions options);
-
-        /// <summary>
-        /// Gets user data for multiple items in a batch.
-        /// </summary>
-        /// <param name="items">Items to get user data for.</param>
-        /// <param name="user">User to use.</param>
-        /// <returns>Dictionary mapping item ID to user data.</returns>
-        Dictionary<Guid, UserItemData> GetUserDataBatch(IReadOnlyList<BaseItem> items, User user)
-        {
-            // Default implementation falls back to individual queries for ABI compatibility
-            var result = new Dictionary<Guid, UserItemData>(items.Count);
-            foreach (var item in items)
-            {
-                var userData = GetUserData(user, item);
-                if (userData is not null)
-                {
-                    result[item.Id] = userData;
-                }
-            }
-
-            return result;
-        }
 
         /// <summary>
         /// Updates playstate for an item and returns true or false indicating if it was played to completion.

@@ -177,53 +177,72 @@ namespace Emby.Server.Implementations.Library
             };
         }
 
-        private UserItemData? GetUserData(User user, Guid itemId, List<string> keys)
+        /// <inheritdoc />
+        public Dictionary<Guid, UserItemData> GetUserDataBatch(IReadOnlyList<BaseItem> items, User user)
         {
-            var cacheKey = GetCacheKey(user.InternalId, itemId);
+            var result = new Dictionary<Guid, UserItemData>(items.Count);
+            var itemsNeedingQuery = new List<(BaseItem Item, List<string> Keys)>();
 
-            if (_cache.TryGet(cacheKey, out var data))
+            foreach (var item in items)
             {
-                return data;
-            }
-
-            data = GetUserDataInternal(user.Id, itemId, keys);
-
-            if (data is null)
-            {
-                return new UserItemData()
+                var cacheKey = GetCacheKey(user.InternalId, item.Id);
+                if (_cache.TryGet(cacheKey, out var cachedData))
                 {
-                    Key = keys[0],
-                };
-            }
-
-            return _cache.GetOrAdd(cacheKey, _ => data);
-        }
-
-        private UserItemData? GetUserDataInternal(Guid userId, Guid itemId, List<string> keys)
-        {
-            if (keys.Count == 0)
-            {
-                return null;
-            }
-
-            using var context = _repository.CreateDbContext();
-            var userData = context.UserData.AsNoTracking().Where(e => e.ItemId == itemId && keys.Contains(e.CustomDataKey) && e.UserId.Equals(userId)).ToArray();
-
-            if (userData.Length > 0)
-            {
-                var directDataReference = userData.FirstOrDefault(e => e.CustomDataKey == itemId.ToString("N"));
-                if (directDataReference is not null)
-                {
-                    return Map(directDataReference);
+                    result[item.Id] = cachedData;
                 }
-
-                return Map(userData.First());
+                else
+                {
+                    var userData = item.UserData?.Where(e => e.UserId.Equals(user.Id)).Select(Map).FirstOrDefault();
+                    if (userData is not null)
+                    {
+                        result[item.Id] = userData;
+                        _cache.AddOrUpdate(cacheKey, userData);
+                    }
+                    else
+                    {
+                        var keys = item.GetUserDataKeys();
+                        itemsNeedingQuery.Add((item, keys));
+                    }
+                }
             }
 
-            return new UserItemData
+            if (itemsNeedingQuery.Count == 0)
             {
-                Key = keys.Last()!
-            };
+                return result;
+            }
+
+            // Build a single query for all missing items
+            var allItemIds = itemsNeedingQuery.Select(x => x.Item.Id).ToList();
+            var allKeys = itemsNeedingQuery.SelectMany(x => x.Keys).Distinct().ToList();
+            if (allKeys.Count > 0)
+            {
+                using var context = _repository.CreateDbContext();
+                var userDataArray = context.UserData
+                    .AsNoTracking()
+                    .Where(e => allItemIds.Contains(e.ItemId) && allKeys.Contains(e.CustomDataKey) && e.UserId.Equals(user.Id))
+                    .ToArray();
+
+                var userDataByItem = userDataArray.GroupBy(e => e.ItemId).ToDictionary(g => g.Key, g => g.ToArray());
+                foreach (var (item, keys) in itemsNeedingQuery)
+                {
+                    UserItemData userData;
+                    if (userDataByItem.TryGetValue(item.Id, out var itemUserData) && itemUserData.Length > 0)
+                    {
+                        var directDataReference = itemUserData.FirstOrDefault(e => e.CustomDataKey == item.Id.ToString("N"));
+                        userData = directDataReference is not null ? Map(directDataReference) : Map(itemUserData.First());
+                    }
+                    else
+                    {
+                        userData = new UserItemData { Key = keys.Count > 0 ? keys[0] : string.Empty };
+                    }
+
+                    result[item.Id] = userData;
+                    var cacheKey = GetCacheKey(user.InternalId, item.Id);
+                    _cache.AddOrUpdate(cacheKey, userData);
+                }
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -242,83 +261,6 @@ namespace Emby.Server.Implementations.Library
             {
                 Key = item.GetUserDataKeys()[0],
             };
-        }
-
-        /// <inheritdoc />
-        public Dictionary<Guid, UserItemData> GetUserDataBatch(IReadOnlyList<BaseItem> items, User user)
-        {
-            var result = new Dictionary<Guid, UserItemData>(items.Count);
-            var itemsNeedingQuery = new List<(BaseItem Item, List<string> Keys)>();
-
-            // First, check cache for each item
-            foreach (var item in items)
-            {
-                var cacheKey = GetCacheKey(user.InternalId, item.Id);
-                if (_cache.TryGet(cacheKey, out var cachedData))
-                {
-                    result[item.Id] = cachedData;
-                }
-                else
-                {
-                    // Check if item has UserData already loaded
-                    var userData = item.UserData?.Where(e => e.UserId.Equals(user.Id)).Select(Map).FirstOrDefault();
-                    if (userData is not null)
-                    {
-                        result[item.Id] = userData;
-                        _cache.AddOrUpdate(cacheKey, userData);
-                    }
-                    else
-                    {
-                        var keys = item.GetUserDataKeys();
-                        itemsNeedingQuery.Add((item, keys));
-                    }
-                }
-            }
-
-            // If all items were in cache or already loaded, return early
-            if (itemsNeedingQuery.Count == 0)
-            {
-                return result;
-            }
-
-            // Build a single query for all missing items
-            var allItemIds = itemsNeedingQuery.Select(x => x.Item.Id).ToList();
-            var allKeys = itemsNeedingQuery.SelectMany(x => x.Keys).Distinct().ToList();
-
-            if (allKeys.Count > 0)
-            {
-                using var context = _repository.CreateDbContext();
-                var userDataArray = context.UserData
-                    .AsNoTracking()
-                    .Where(e => allItemIds.Contains(e.ItemId) && allKeys.Contains(e.CustomDataKey) && e.UserId.Equals(user.Id))
-                    .ToArray();
-
-                // Group by item ID
-                var userDataByItem = userDataArray.GroupBy(e => e.ItemId).ToDictionary(g => g.Key, g => g.ToArray());
-
-                // Process each item that needed querying
-                foreach (var (item, keys) in itemsNeedingQuery)
-                {
-                    UserItemData userData;
-                    if (userDataByItem.TryGetValue(item.Id, out var itemUserData) && itemUserData.Length > 0)
-                    {
-                        // Prefer direct reference by item ID
-                        var directDataReference = itemUserData.FirstOrDefault(e => e.CustomDataKey == item.Id.ToString("N"));
-                        userData = directDataReference is not null ? Map(directDataReference) : Map(itemUserData.First());
-                    }
-                    else
-                    {
-                        // No user data found, create default
-                        userData = new UserItemData { Key = keys.Count > 0 ? keys[0] : string.Empty };
-                    }
-
-                    result[item.Id] = userData;
-                    var cacheKey = GetCacheKey(user.InternalId, item.Id);
-                    _cache.AddOrUpdate(cacheKey, userData);
-                }
-            }
-
-            return result;
         }
 
         /// <inheritdoc />

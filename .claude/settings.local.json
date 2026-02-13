@@ -14,7 +14,8 @@
       "Bash(git apply:*)",
       "Bash(git stash:*)",
       "Bash(git config:*)",
-      "Bash(unix2dos:*)"
+      "Bash(unix2dos:*)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }

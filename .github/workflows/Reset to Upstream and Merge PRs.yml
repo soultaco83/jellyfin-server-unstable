@@ -849,7 +849,7 @@ jobs:
                 REMOVE_PR=$(echo $REMOVE_PR | xargs)
                 if [ "$PR" == "$REMOVE_PR" ]; then
                   SHOULD_REMOVE=true
-                  ((REMOVED_COUNT++))
+                  REMOVED_COUNT=$((REMOVED_COUNT + 1))
                   echo "  Removing PR $PR from list"
                   break
                 fi

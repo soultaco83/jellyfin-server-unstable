@@ -68,67 +68,27 @@ public class FilterController : BaseJellyfinApiController
             item = _libraryManager.GetParentItem(parentId, user?.Id);
         }
 
-        var query = new InternalItemsQuery
-        {
-            User = user,
-            MediaTypes = mediaTypes,
-            IncludeItemTypes = includeItemTypes,
-            Recursive = true,
-            EnableTotalRecordCount = false,
-            DtoOptions = new DtoOptions
-            {
-                Fields = new[] { ItemFields.Genres, ItemFields.Tags },
-                EnableImages = false,
-                EnableUserData = false
-            }
-        };
-
         if (item is not Folder folder)
         {
             return new QueryFiltersLegacy();
         }
 
-        var itemList = folder.GetItemList(query);
-
-        // Get audio languages using the library manager
-        var audioLanguageQuery = new InternalItemsQuery
+        var query = new InternalItemsQuery(user)
         {
-            User = user,
             MediaTypes = mediaTypes,
             IncludeItemTypes = includeItemTypes,
             Recursive = true,
-            AncestorIds = new[] { folder.Id }
+            EnableTotalRecordCount = false,
+            AncestorIds = [folder.Id],
+            DtoOptions = new DtoOptions
+            {
+                Fields = [],
+                EnableImages = false,
+                EnableUserData = false
+            }
         };
-        var audioLanguages = _libraryManager.GetAudioLanguages(audioLanguageQuery);
 
-        return new QueryFiltersLegacy
-        {
-            Years = itemList.Select(i => i.ProductionYear ?? -1)
-                .Where(i => i > 0)
-                .Distinct()
-                .Order()
-                .ToArray(),
-
-            Genres = itemList.SelectMany(i => i.Genres)
-                .DistinctNames()
-                .Order()
-                .ToArray(),
-
-            Tags = itemList
-                .SelectMany(i => i.Tags)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Order()
-                .ToArray(),
-
-            OfficialRatings = itemList
-                .Select(i => i.OfficialRating)
-                .Where(i => !string.IsNullOrWhiteSpace(i))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Order()
-                .ToArray(),
-
-            AudioLanguages = audioLanguages.ToArray()
-        };
+        return _libraryManager.GetQueryFiltersLegacy(query);
     }
 
     /// <summary>

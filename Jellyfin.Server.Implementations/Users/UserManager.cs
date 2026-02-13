@@ -93,7 +93,7 @@ namespace Jellyfin.Server.Implementations.Users
             _users = new ConcurrentDictionary<Guid, User>();
             using var dbContext = _dbProvider.CreateDbContext();
             foreach (var user in dbContext.Users
-                .AsSplitQuery()
+                .AsSingleQuery()
                 .Include(user => user.Permissions)
                 .Include(user => user.Preferences)
                 .Include(user => user.AccessSchedules)
@@ -607,6 +607,7 @@ namespace Jellyfin.Server.Implementations.Users
                                .Include(u => u.Preferences)
                                .Include(u => u.AccessSchedules)
                                .Include(u => u.ProfileImage)
+                               .AsSingleQuery()
                                .FirstOrDefault(u => u.Id.Equals(userId))
                            ?? throw new ArgumentException("No user exists with given Id!");
 
@@ -651,6 +652,7 @@ namespace Jellyfin.Server.Implementations.Users
                                .Include(u => u.Preferences)
                                .Include(u => u.AccessSchedules)
                                .Include(u => u.ProfileImage)
+                               .AsSingleQuery()
                                .FirstOrDefault(u => u.Id.Equals(userId))
                            ?? throw new ArgumentException("No user exists with given Id!");
 
@@ -888,7 +890,33 @@ namespace Jellyfin.Server.Implementations.Users
             dbContext.Users.Attach(user);
             dbContext.Entry(user).State = EntityState.Modified;
             _users[user.Id] = user;
-            await dbContext.SaveChangesAsync().ConfigureAwait(false);
+
+            try
+            {
+                await dbContext.SaveChangesAsync().ConfigureAwait(false);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                // Handle race condition when multiple logins happen simultaneously.
+                // Reload the entity and retry once.
+                _logger.LogWarning(ex, "Concurrency conflict updating user {UserId}, retrying", user.Id);
+
+                foreach (var entry in ex.Entries)
+                {
+                    var databaseValues = await entry.GetDatabaseValuesAsync().ConfigureAwait(false);
+                    if (databaseValues is null)
+                    {
+                        // User was deleted, nothing to update
+                        return;
+                    }
+
+                    // Refresh original values from database
+                    entry.OriginalValues.SetValues(databaseValues);
+                }
+
+                // Retry the save
+                await dbContext.SaveChangesAsync().ConfigureAwait(false);
+            }
         }
     }
 }

@@ -158,67 +158,6 @@ public sealed class BaseItemRepository
     }
 
     /// <inheritdoc />
-    public async Task DeleteItemsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
-    {
-        if (ids is null || ids.Count == 0 || ids.Any(f => f.Equals(PlaceholderId)))
-        {
-            throw new ArgumentException("Guid can't be empty or the placeholder id.", nameof(ids));
-        }
-
-        var dbContext = await _dbProvider.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        await using (dbContext.ConfigureAwait(false))
-        {
-            await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-            var date = (DateTime?)DateTime.UtcNow;
-
-            var relatedItems = ids.SelectMany(f => TraverseHirachyDown(f, dbContext)).ToArray();
-
-            // Remove any UserData entries for the placeholder item that would conflict with the UserData
-            // being detached from the item being deleted. This is necessary because, during an update,
-            // UserData may be reattached to a new entry, but some entries can be left behind.
-            // Ensures there are no duplicate UserId/CustomDataKey combinations for the placeholder.
-            await dbContext.UserData
-                .Join(
-                    dbContext.UserData.WhereOneOrMany(relatedItems, e => e.ItemId),
-                    placeholder => new { placeholder.UserId, placeholder.CustomDataKey },
-                    userData => new { userData.UserId, userData.CustomDataKey },
-                    (placeholder, userData) => placeholder)
-                .Where(e => e.ItemId == PlaceholderId)
-                .ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-
-            // Detach all user watch data
-            await dbContext.UserData.WhereOneOrMany(relatedItems, e => e.ItemId)
-                .ExecuteUpdateAsync(e => e
-                    .SetProperty(f => f.RetentionDate, date)
-                    .SetProperty(f => f.ItemId, PlaceholderId), cancellationToken).ConfigureAwait(false);
-
-            await dbContext.AncestorIds.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.AncestorIds.WhereOneOrMany(relatedItems, e => e.ParentItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.AttachmentStreamInfos.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.BaseItemImageInfos.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.BaseItemMetadataFields.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.BaseItemProviders.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.BaseItemTrailerTypes.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.BaseItems.WhereOneOrMany(relatedItems, e => e.Id).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.Chapters.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.CustomItemDisplayPreferences.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.ItemDisplayPreferences.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.ItemValues.Where(e => e.BaseItemsMap!.Count == 0).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.ItemValuesMap.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.KeyframeData.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.MediaSegments.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.MediaStreamInfos.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            var query = dbContext.PeopleBaseItemMap.WhereOneOrMany(relatedItems, e => e.ItemId).Select(f => f.PeopleId).Distinct().ToArray();
-            await dbContext.PeopleBaseItemMap.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.Peoples.WhereOneOrMany(query, e => e.Id).Where(e => e.BaseItems!.Count == 0).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.TrickplayInfos.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    /// <inheritdoc />
     public void UpdateInheritedValues()
     {
         using var context = _dbProvider.CreateDbContext();
@@ -308,24 +247,6 @@ public sealed class BaseItemRepository
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<string> GetAudioLanguages(InternalItemsQuery filter)
-    {
-        PrepareFilterQuery(filter);
-        using var context = _dbProvider.CreateDbContext();
-
-        IQueryable<BaseItemEntity> dbQuery = PrepareItemQuery(context, filter);
-        dbQuery = TranslateQuery(dbQuery, context, filter);
-
-        return dbQuery
-            .SelectMany(e => e.MediaStreams!)
-            .Where(ms => ms.StreamType == MediaStreamTypeEntity.Audio && ms.Language != null)
-            .Select(ms => ms.Language!)
-            .Distinct()
-            .OrderBy(l => l)
-            .ToList();
-    }
-
-    /// <inheritdoc />
     public QueryResult<BaseItemDto> GetItems(InternalItemsQuery filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
@@ -412,72 +333,31 @@ public sealed class BaseItemRepository
 
         using var context = _dbProvider.CreateDbContext();
 
-        var limit = filter.Limit ?? 30;
-        var isMusic = collectionType == CollectionType.music;
+        // Subquery to group by SeriesNames/Album and get the max Date Created for each group.
+        var subquery = PrepareItemQuery(context, filter);
+        subquery = TranslateQuery(subquery, context, filter);
+        var subqueryGrouped = subquery.GroupBy(g => collectionType == CollectionType.tvshows ? g.SeriesName : g.Album)
+            .Select(g => new
+            {
+                Key = g.Key,
+                MaxDateCreated = g.Max(a => a.DateCreated)
+            })
+            .OrderByDescending(g => g.MaxDateCreated)
+            .Select(g => g);
 
-        // Get child type name for the query
-        var childTypeName = isMusic
-            ? _itemTypeLookup.BaseItemKindNames[BaseItemKind.Audio]
-            : _itemTypeLookup.BaseItemKindNames[BaseItemKind.Episode];
-
-        // Find parent IDs (Album/Series) with recent content.
-        List<Guid> topParentIds;
-        if (isMusic)
+        if (filter.Limit.HasValue && filter.Limit.Value > 0)
         {
-            // For music: Query albums directly by DateCreated.
-            // Assumption: albums and tracks are created at similar times when adding music.
-            // This scans ~10K albums instead of GROUP BY on 300K tracks.
-            var albumTypeName = _itemTypeLookup.BaseItemKindNames[BaseItemKind.MusicAlbum];
-            topParentIds = context.BaseItems
-                .AsNoTracking()
-                .Where(e => e.Type == albumTypeName)
-                .Where(e => filter.TopParentIds.Contains(e.TopParentId!.Value))
-                .OrderByDescending(e => e.DateCreated)
-                .Take(limit)
-                .Select(e => e.Id)
-                .ToList();
-        }
-        else
-        {
-            // For TV: GROUP BY episodes to find series with newest episodes.
-            // Episode counts are typically smaller than music track counts.
-            var childQuery = context.BaseItems
-                .AsNoTracking()
-                .Where(e => e.Type == childTypeName)
-                .Where(e => filter.TopParentIds.Contains(e.TopParentId!.Value));
-
-            topParentIds = childQuery
-                .GroupBy(e => e.SeriesId!.Value)
-                .Select(g => new { SeriesId = g.Key, MaxDate = g.Max(e => e.DateCreated) })
-                .OrderByDescending(g => g.MaxDate)
-                .Take(limit)
-                .Select(g => g.SeriesId)
-                .ToList();
+            subqueryGrouped = subqueryGrouped.Take(filter.Limit.Value);
         }
 
-        if (topParentIds.Count == 0)
-        {
-            return Array.Empty<BaseItem>();
-        }
+        filter.Limit = null;
 
-        // Get child items for those parents
-        IQueryable<BaseItemEntity> mainquery = context.BaseItems
-            .AsNoTracking()
-            .Where(e => e.Type == childTypeName);
+        var mainquery = PrepareItemQuery(context, filter);
+        mainquery = TranslateQuery(mainquery, context, filter);
+        mainquery = mainquery.Where(g => g.DateCreated >= subqueryGrouped.Min(s => s.MaxDateCreated));
+        mainquery = ApplyGroupingFilter(context, mainquery, filter);
+        mainquery = ApplyQueryPaging(mainquery, filter);
 
-        if (isMusic)
-        {
-            mainquery = mainquery.Where(e => topParentIds.Contains(e.ParentId!.Value));
-        }
-        else
-        {
-            mainquery = mainquery.Where(e => topParentIds.Contains(e.SeriesId!.Value));
-        }
-
-        mainquery = mainquery.OrderByDescending(e => e.DateCreated);
-
-        // Use split query to avoid cartesian explosion with multiple Includes
-        mainquery = mainquery.AsSplitQuery();
         mainquery = ApplyNavigations(mainquery, filter);
 
         return mainquery.AsEnumerable().Where(e => e is not null).Select(w => DeserializeBaseItem(w, filter.SkipDeserialization)).Where(dto => dto is not null).ToArray()!;
@@ -803,15 +683,14 @@ public sealed class BaseItemRepository
             .SelectMany(f => f.Values)
             .Distinct()
             .ToArray();
-
-        var types = allListedItemValues.Select(e => e.MagicNumber).Distinct().ToArray();
-        var values = allListedItemValues.Select(e => e.Value).Distinct().ToArray();
-        var allListedItemValuesSet = allListedItemValues.ToHashSet();
-
         var existingValues = context.ItemValues
-            .Where(e => types.Contains(e.Type) && values.Contains(e.Value))
-            .AsEnumerable()
-            .Where(e => allListedItemValuesSet.Contains((e.Type, e.Value)))
+            .Select(e => new
+            {
+                item = e,
+                Key = e.Type + "+" + e.Value
+            })
+            .Where(f => allListedItemValues.Select(e => $"{(int)e.MagicNumber}+{e.Value}").Contains(f.Key))
+            .Select(e => e.item)
             .ToArray();
         var missingItemValues = allListedItemValues.Except(existingValues.Select(f => (MagicNumber: f.Type, f.Value))).Select(f => new ItemValue()
         {
@@ -1171,7 +1050,7 @@ public sealed class BaseItemRepository
         entity.TotalBitrate = dto.TotalBitrate;
         entity.ExternalId = dto.ExternalId;
         entity.Size = dto.Size;
-        entity.Genres = string.Join('|', dto.Genres.Distinct(StringComparer.OrdinalIgnoreCase));
+        entity.Genres = string.Join('|', dto.Genres);
         entity.DateCreated = dto.DateCreated == DateTime.MinValue ? null : dto.DateCreated;
         entity.DateModified = dto.DateModified == DateTime.MinValue ? null : dto.DateModified;
         entity.ChannelId = dto.ChannelId;
@@ -1198,9 +1077,9 @@ public sealed class BaseItemRepository
         }
 
         entity.ExtraIds = dto.ExtraIds is not null ? string.Join('|', dto.ExtraIds) : null;
-        entity.ProductionLocations = dto.ProductionLocations is not null ? string.Join('|', dto.ProductionLocations.Where(p => !string.IsNullOrWhiteSpace(p)).Distinct(StringComparer.OrdinalIgnoreCase)) : null;
-        entity.Studios = dto.Studios is not null ? string.Join('|', dto.Studios.Distinct(StringComparer.OrdinalIgnoreCase)) : null;
-        entity.Tags = dto.Tags is not null ? string.Join('|', dto.Tags.Distinct(StringComparer.OrdinalIgnoreCase)) : null;
+        entity.ProductionLocations = dto.ProductionLocations is not null ? string.Join('|', dto.ProductionLocations.Where(p => !string.IsNullOrWhiteSpace(p))) : null;
+        entity.Studios = dto.Studios is not null ? string.Join('|', dto.Studios) : null;
+        entity.Tags = dto.Tags is not null ? string.Join('|', dto.Tags) : null;
         entity.LockedFields = dto.LockedFields is not null ? dto.LockedFields
             .Select(e => new BaseItemMetadataField()
             {
@@ -1243,12 +1122,12 @@ public sealed class BaseItemRepository
 
         if (dto is IHasArtist hasArtists)
         {
-            entity.Artists = hasArtists.Artists is not null ? string.Join('|', hasArtists.Artists.Distinct(StringComparer.OrdinalIgnoreCase)) : null;
+            entity.Artists = hasArtists.Artists is not null ? string.Join('|', hasArtists.Artists) : null;
         }
 
         if (dto is IHasAlbumArtist hasAlbumArtists)
         {
-            entity.AlbumArtists = hasAlbumArtists.AlbumArtists is not null ? string.Join('|', hasAlbumArtists.AlbumArtists.Distinct(StringComparer.OrdinalIgnoreCase)) : null;
+            entity.AlbumArtists = hasAlbumArtists.AlbumArtists is not null ? string.Join('|', hasAlbumArtists.AlbumArtists) : null;
         }
 
         if (dto is LiveTvProgram program)
@@ -2494,12 +2373,6 @@ public sealed class BaseItemRepository
                 .Where(e => e.MediaStreams!.Any(f => f.StreamType == MediaStreamTypeEntity.Subtitle) == filter.HasSubtitles.Value);
         }
 
-        if (filter.AudioLanguages.Length > 0)
-        {
-            baseQuery = baseQuery
-                .Where(e => e.MediaStreams!.Any(f => f.StreamType == MediaStreamTypeEntity.Audio && filter.AudioLanguages.Contains(f.Language)));
-        }
-
         if (filter.HasChapterImages.HasValue)
         {
             baseQuery = baseQuery
@@ -2612,17 +2485,6 @@ public sealed class BaseItemRepository
             if (includeSelected.Length > 0)
             {
                 baseQuery = baseQuery.Where(e => e.Provider!.Select(f => f.ProviderId + ":" + f.ProviderValue)!.Any(f => includeSelected.Contains(f)));
-            }
-        }
-
-        if (filter.HasAnyProviderIds is not null && filter.HasAnyProviderIds.Count > 0)
-        {
-            var includeAny = filter.HasAnyProviderIds
-                .SelectMany(kvp => kvp.Value.Select(v => $"{kvp.Key}:{v}"))
-                .ToArray();
-            if (includeAny.Length > 0)
-            {
-                baseQuery = baseQuery.Where(e => e.Provider!.Select(f => f.ProviderId + ":" + f.ProviderValue)!.Any(f => includeAny.Contains(f)));
             }
         }
 

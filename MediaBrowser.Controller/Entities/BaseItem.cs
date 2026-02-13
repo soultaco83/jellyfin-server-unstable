@@ -1486,7 +1486,7 @@ namespace MediaBrowser.Controller.Entities
                         await LibraryManager.DeleteItemAsync(removedExtra, new DeleteOptions()
                         {
                             DeleteFileLocation = false
-                        });
+                        }, cancellationToken).ConfigureAwait(false);
                     }
                 }
             }

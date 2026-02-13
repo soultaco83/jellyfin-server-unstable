@@ -198,8 +198,6 @@ namespace MediaBrowser.Controller.Entities
 
         public string[] OfficialRatings { get; set; }
 
-        public string[] AudioLanguages { get; set; }
-
         public DateTime? MinPremiereDate { get; set; }
 
         public DateTime? MaxPremiereDate { get; set; }
@@ -351,8 +349,6 @@ namespace MediaBrowser.Controller.Entities
         }
 
         public Dictionary<string, string>? HasAnyProviderId { get; set; }
-
-        public Dictionary<string, string[]>? HasAnyProviderIds { get; set; }
 
         public Guid[] AlbumArtistIds { get; set; }
 

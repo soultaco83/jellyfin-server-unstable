@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Jellyfin.Database.Implementations.ModelConfiguration;
 
 /// <summary>
-/// BaseItemImageInfo Configuration.
+/// FluentAPI configuration for the BaseItemImageInfo entity.
 /// </summary>
 public class BaseItemImageInfoConfiguration : IEntityTypeConfiguration<BaseItemImageInfo>
 {
@@ -13,8 +13,9 @@ public class BaseItemImageInfoConfiguration : IEntityTypeConfiguration<BaseItemI
     public void Configure(EntityTypeBuilder<BaseItemImageInfo> builder)
     {
         builder.HasKey(e => e.Id);
-        builder.HasIndex(e => e.ItemId); // Index for queries filtering by ItemId
-        builder.HasOne(e => e.Item).WithMany(e => e.Images).HasForeignKey(e => e.ItemId)
-            .OnDelete(DeleteBehavior.Cascade); // Delete image info when item is deleted
+        builder.HasOne(e => e.Item).WithMany(e => e.Images).HasForeignKey(e => e.ItemId);
+
+        // Composite index for filtering by item and image type (also covers ItemId-only lookups)
+        builder.HasIndex(e => new { e.ItemId, e.ImageType });
     }
 }

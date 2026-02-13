@@ -564,29 +564,32 @@ public class UserLibraryController : BaseJellyfinApiController
             },
             dtoOptions);
 
-        // Collect all items and their metadata for batch processing
-        var itemsWithMetadata = list.Select(i =>
+        var resolvedItems = new BaseItem[list.Count];
+        var childCounts = new int[list.Count];
+        for (int i = 0; i < list.Count; i++)
         {
-            var item = i.Item2[0];
+            var tuple = list[i];
+            var item = tuple.Item2[0];
             var childCount = 0;
 
-            if (i.Item1 is not null && (i.Item2.Count > 1 || i.Item1 is MusicAlbum || i.Item1 is Series ))
+            if (tuple.Item1 is not null && (tuple.Item2.Count > 1 || tuple.Item1 is MusicAlbum || tuple.Item1 is Series))
             {
-                item = i.Item1;
-                childCount = i.Item2.Count;
+                item = tuple.Item1;
+                childCount = tuple.Item2.Count;
             }
 
-            return (item, childCount);
-        }).ToList();
+            resolvedItems[i] = item;
+            childCounts[i] = childCount;
+        }
 
-        // Batch convert items to DTOs
-        var items = itemsWithMetadata.Select(x => x.item).ToList();
-        var dtos = _dtoService.GetBaseItemDtos(items, dtoOptions, user);
-
-        // Apply child counts
+        // Fetch DTOs without visibility check since we've already done that in GetLatestItems and restore child counts afterwards
+        var dtos = _dtoService.GetBaseItemDtos(resolvedItems, dtoOptions, user, skipVisibilityCheck: true);
         for (int i = 0; i < dtos.Count; i++)
         {
-            dtos[i].ChildCount = itemsWithMetadata[i].childCount;
+            if (childCounts[i] > 0)
+            {
+                dtos[i].ChildCount = childCounts[i];
+            }
         }
 
         return Ok(dtos.AsEnumerable());

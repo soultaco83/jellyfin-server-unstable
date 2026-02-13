@@ -16,6 +16,7 @@ public class PeopleBaseItemMapConfiguration : IEntityTypeConfiguration<PeopleBas
         builder.HasIndex(e => new { e.PeopleId, e.ItemId });
         builder.HasIndex(e => new { e.ItemId, e.SortOrder });
         builder.HasIndex(e => new { e.ItemId, e.ListOrder });
+        builder.HasIndex(e => e.PeopleId);
         builder.HasOne(e => e.Item);
         builder.HasOne(e => e.People);
     }

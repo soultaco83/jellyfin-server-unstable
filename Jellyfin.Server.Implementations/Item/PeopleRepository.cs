@@ -70,10 +70,9 @@ public class PeopleRepository(IDbContextFactory<JellyfinDbContext> dbProvider, I
         using var context = _dbProvider.CreateDbContext();
         var dbQuery = TranslateQuery(context.Peoples.AsNoTracking(), context, filter).Select(e => e.Name).Distinct();
 
-        // dbQuery = dbQuery.OrderBy(e => e.ListOrder);
         if (filter.Limit > 0)
         {
-            dbQuery = dbQuery.Take(filter.Limit);
+            dbQuery = dbQuery.OrderBy(e => e).Take(filter.Limit);
         }
 
         return dbQuery.ToArray();
@@ -225,8 +224,7 @@ public class PeopleRepository(IDbContextFactory<JellyfinDbContext> dbProvider, I
 
         if (filter.MaxListOrder.HasValue && !filter.ItemId.IsEmpty())
         {
-            // Use Any() instead of First() to avoid correlated subquery issues
-            query = query.Where(e => e.BaseItems!.Any(w => w.ItemId == filter.ItemId && w.ListOrder <= filter.MaxListOrder.Value));
+            query = query.Where(e => e.BaseItems!.Where(w => w.ItemId == filter.ItemId).OrderBy(w => w.ListOrder).First().ListOrder <= filter.MaxListOrder.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(filter.NameContains))

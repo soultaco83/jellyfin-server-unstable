@@ -114,6 +114,32 @@ public sealed class BaseItemRepository
 
         var relatedItems = ids.SelectMany(f => TraverseHirachyDown(f, context)).ToArray();
 
+        // Remove duplicate UserData entries for items being deleted.
+        // For each (UserId, CustomDataKey) combination, keep only the entry with the newest LastPlayedDate.
+        var userDataToCheck = context.UserData
+            .WhereOneOrMany(relatedItems, e => e.ItemId)
+            .Select(u => new { u.ItemId, u.UserId, u.CustomDataKey, u.LastPlayedDate })
+            .ToArray();
+
+        var duplicateKeys = userDataToCheck
+            .GroupBy(u => new { u.UserId, u.CustomDataKey })
+            .Where(g => g.Count() > 1)
+            .SelectMany(g => g.OrderByDescending(u => u.LastPlayedDate.HasValue)
+                .ThenByDescending(u => u.LastPlayedDate)
+                .ThenByDescending(u => u.ItemId)
+                .Skip(1)
+                .Select(u => new { u.UserId, u.CustomDataKey, u.ItemId }))
+            .ToArray();
+
+        foreach (var key in duplicateKeys)
+        {
+            context.UserData
+                .Where(e => e.UserId == key.UserId
+                            && e.CustomDataKey == key.CustomDataKey
+                            && e.ItemId == key.ItemId)
+                .ExecuteDelete();
+        }
+
         // Remove any UserData entries for the placeholder item that would conflict with the UserData
         // being detached from the item being deleted. This is necessary because, during an update,
         // UserData may be reattached to a new entry, but some entries can be left behind.
@@ -250,7 +276,7 @@ public sealed class BaseItemRepository
     public QueryResult<BaseItemDto> GetItems(InternalItemsQuery filter)
     {
         ArgumentNullException.ThrowIfNull(filter);
-        if (!filter.EnableTotalRecordCount || ((filter.Limit ?? 0) == 0 && (filter.StartIndex ?? 0) == 0))
+        if (!filter.EnableTotalRecordCount || (!filter.Limit.HasValue && (filter.StartIndex ?? 0) == 0))
         {
             var returnList = GetItemList(filter);
             return new QueryResult<BaseItemDto>(
@@ -277,7 +303,7 @@ public sealed class BaseItemRepository
         dbQuery = ApplyQueryPaging(dbQuery, filter);
         dbQuery = ApplyNavigations(dbQuery, filter);
 
-        result.Items = dbQuery.AsEnumerable().Where(e => e is not null).Select(w => DeserializeBaseItem(w, filter.SkipDeserialization)).Where(dto => dto is not null).ToArray()!;
+        result.Items = dbQuery.AsEnumerable().Where(e => e is not null).Select(w => DeserializeBaseItem(w, filter.SkipDeserialization)).ToArray();
         result.StartIndex = filter.StartIndex ?? 0;
         return result;
     }
@@ -316,7 +342,7 @@ public sealed class BaseItemRepository
 
         dbQuery = ApplyNavigations(dbQuery, filter);
 
-        return dbQuery.AsEnumerable().Where(e => e is not null).Select(w => DeserializeBaseItem(w, filter.SkipDeserialization)).Where(dto => dto is not null).ToArray()!;
+        return dbQuery.AsEnumerable().Where(e => e is not null).Select(w => DeserializeBaseItem(w, filter.SkipDeserialization)).ToArray();
     }
 
     /// <inheritdoc/>
@@ -345,7 +371,7 @@ public sealed class BaseItemRepository
             .OrderByDescending(g => g.MaxDateCreated)
             .Select(g => g);
 
-        if (filter.Limit.HasValue && filter.Limit.Value > 0)
+        if (filter.Limit.HasValue)
         {
             subqueryGrouped = subqueryGrouped.Take(filter.Limit.Value);
         }
@@ -360,7 +386,7 @@ public sealed class BaseItemRepository
 
         mainquery = ApplyNavigations(mainquery, filter);
 
-        return mainquery.AsEnumerable().Where(e => e is not null).Select(w => DeserializeBaseItem(w, filter.SkipDeserialization)).Where(dto => dto is not null).ToArray()!;
+        return mainquery.AsEnumerable().Where(e => e is not null).Select(w => DeserializeBaseItem(w, filter.SkipDeserialization)).ToArray();
     }
 
     /// <inheritdoc />
@@ -386,7 +412,7 @@ public sealed class BaseItemRepository
             .OrderByDescending(g => g.LastPlayedDate)
             .Select(g => g.Key!);
 
-        if (filter.Limit.HasValue && filter.Limit.Value > 0)
+        if (filter.Limit.HasValue)
         {
             query = query.Take(filter.Limit.Value);
         }
@@ -459,14 +485,19 @@ public sealed class BaseItemRepository
 
     private IQueryable<BaseItemEntity> ApplyQueryPaging(IQueryable<BaseItemEntity> dbQuery, InternalItemsQuery filter)
     {
-        if (filter.StartIndex.HasValue && filter.StartIndex.Value > 0)
+        if (filter.Limit.HasValue || filter.StartIndex.HasValue)
         {
-            dbQuery = dbQuery.Skip(filter.StartIndex.Value);
-        }
+            var offset = filter.StartIndex ?? 0;
 
-        if (filter.Limit.HasValue && filter.Limit.Value > 0)
-        {
-            dbQuery = dbQuery.Take(filter.Limit.Value);
+            if (offset > 0)
+            {
+                dbQuery = dbQuery.Skip(offset);
+            }
+
+            if (filter.Limit.HasValue)
+            {
+                dbQuery = dbQuery.Take(filter.Limit.Value);
+            }
         }
 
         return dbQuery;
@@ -581,34 +612,22 @@ public sealed class BaseItemRepository
     }
 
     /// <inheritdoc  />
-    public async Task SaveImagesAsync(BaseItemDto item, CancellationToken cancellationToken = default)
+    public void SaveImages(BaseItemDto item)
     {
         ArgumentNullException.ThrowIfNull(item);
 
-        var images = item.ImageInfos.Select(e => Map(item.Id, e)).ToArray();
+        var images = item.ImageInfos.Select(e => Map(item.Id, e));
+        using var context = _dbProvider.CreateDbContext();
 
-        var context = await _dbProvider.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        await using (context.ConfigureAwait(false))
+        if (!context.BaseItems.Any(bi => bi.Id == item.Id))
         {
-            if (!await context.BaseItems
-                .AnyAsync(bi => bi.Id == item.Id, cancellationToken)
-                .ConfigureAwait(false))
-            {
-                _logger.LogWarning("Unable to save ImageInfo for non existing BaseItem");
-                return;
-            }
-
-            await context.BaseItemImageInfos
-                .Where(e => e.ItemId == item.Id)
-                .ExecuteDeleteAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            await context.BaseItemImageInfos
-                .AddRangeAsync(images, cancellationToken)
-                .ConfigureAwait(false);
-
-            await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogWarning("Unable to save ImageInfo for non existing BaseItem");
+            return;
         }
+
+        context.BaseItemImageInfos.Where(e => e.ItemId == item.Id).ExecuteDelete();
+        context.BaseItemImageInfos.AddRange(images);
+        context.SaveChanges();
     }
 
     /// <inheritdoc  />
@@ -1201,7 +1220,7 @@ public sealed class BaseItemRepository
         return type.GetCustomAttribute<RequiresSourceSerialisationAttribute>() == null;
     }
 
-    private BaseItemDto? DeserializeBaseItem(BaseItemEntity baseItemEntity, bool skipDeserialization = false)
+    private BaseItemDto DeserializeBaseItem(BaseItemEntity baseItemEntity, bool skipDeserialization = false)
     {
         ArgumentNullException.ThrowIfNull(baseItemEntity, nameof(baseItemEntity));
         if (_serverConfigurationManager?.Configuration is null)
@@ -1224,19 +1243,11 @@ public sealed class BaseItemRepository
     /// <param name="logger">Logger.</param>
     /// <param name="appHost">The application server Host.</param>
     /// <param name="skipDeserialization">If only mapping should be processed.</param>
-    /// <returns>A mapped BaseItem, or null if the item type is unknown.</returns>
-    public static BaseItemDto? DeserializeBaseItem(BaseItemEntity baseItemEntity, ILogger logger, IServerApplicationHost? appHost, bool skipDeserialization = false)
+    /// <returns>A mapped BaseItem.</returns>
+    /// <exception cref="InvalidOperationException">Will be thrown if an invalid serialisation is requested.</exception>
+    public static BaseItemDto DeserializeBaseItem(BaseItemEntity baseItemEntity, ILogger logger, IServerApplicationHost? appHost, bool skipDeserialization = false)
     {
-        var type = GetType(baseItemEntity.Type);
-        if (type is null)
-        {
-            logger.LogWarning(
-                "Skipping item {ItemId} with unknown type '{ItemType}'. This may indicate a removed plugin or database corruption.",
-                baseItemEntity.Id,
-                baseItemEntity.Type);
-            return null;
-        }
-
+        var type = GetType(baseItemEntity.Type) ?? throw new InvalidOperationException("Cannot deserialize unknown type.");
         BaseItemDto? dto = null;
         if (TypeRequiresDeserialization(type) && baseItemEntity.Data is not null && !skipDeserialization)
         {
@@ -1262,7 +1273,7 @@ public sealed class BaseItemRepository
     {
         ArgumentNullException.ThrowIfNull(filter);
 
-        if (!(filter.Limit.HasValue && filter.Limit.Value > 0))
+        if (!filter.Limit.HasValue)
         {
             filter.EnableTotalRecordCount = false;
         }
@@ -1341,14 +1352,19 @@ public sealed class BaseItemRepository
             result.TotalRecordCount = query.Count();
         }
 
-        if (filter.StartIndex.HasValue && filter.StartIndex.Value > 0)
+        if (filter.Limit.HasValue || filter.StartIndex.HasValue)
         {
-            query = query.Skip(filter.StartIndex.Value);
-        }
+            var offset = filter.StartIndex ?? 0;
 
-        if (filter.Limit.HasValue && filter.Limit.Value > 0)
-        {
-            query = query.Take(filter.Limit.Value);
+            if (offset > 0)
+            {
+                query = query.Skip(offset);
+            }
+
+            if (filter.Limit.HasValue)
+            {
+                query = query.Take(filter.Limit.Value);
+            }
         }
 
         IQueryable<BaseItemEntity>? itemCountQuery = null;
@@ -1403,9 +1419,10 @@ public sealed class BaseItemRepository
                 .. resultQuery
                     .AsEnumerable()
                     .Where(e => e is not null)
-                    .Select(e => (Item: DeserializeBaseItem(e.item, filter.SkipDeserialization), e.itemCount))
-                    .Where(e => e.Item is not null)
-                    .Select(e => (e.Item!, e.itemCount))
+                    .Select(e =>
+                    {
+                        return (DeserializeBaseItem(e.item, filter.SkipDeserialization), e.itemCount);
+                    })
             ];
         }
         else
@@ -1416,9 +1433,10 @@ public sealed class BaseItemRepository
                 .. query
                     .AsEnumerable()
                     .Where(e => e is not null)
-                    .Select(e => (Item: DeserializeBaseItem(e, filter.SkipDeserialization), ItemCounts: (ItemCounts?)null))
-                    .Where(e => e.Item is not null)
-                    .Select(e => (e.Item!, e.ItemCounts))
+                    .Select<BaseItemEntity, (BaseItemDto, ItemCounts?)>(e =>
+                    {
+                        return (DeserializeBaseItem(e, filter.SkipDeserialization), null);
+                    })
             ];
         }
 
@@ -1427,7 +1445,7 @@ public sealed class BaseItemRepository
 
     private static void PrepareFilterQuery(InternalItemsQuery query)
     {
-        if (query.Limit.HasValue && query.Limit.Value > 0 && query.EnableGroupByMetadataKey)
+        if (query.Limit.HasValue && query.EnableGroupByMetadataKey)
         {
             query.Limit = query.Limit.Value + 4;
         }
@@ -1438,54 +1456,14 @@ public sealed class BaseItemRepository
         }
     }
 
-    /// <summary>
-    /// Gets the clean value for search and sorting purposes.
-    /// </summary>
-    /// <param name="value">The value to clean.</param>
-    /// <returns>The cleaned value.</returns>
-    public static string GetCleanValue(string value)
+    private string GetCleanValue(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
             return value;
         }
 
-        var noDiacritics = value.RemoveDiacritics();
-
-        // Build a string where any punctuation or symbol is treated as a separator (space).
-        var sb = new StringBuilder(noDiacritics.Length);
-        var previousWasSpace = false;
-        foreach (var ch in noDiacritics)
-        {
-            char outCh;
-            if (char.IsLetterOrDigit(ch) || char.IsWhiteSpace(ch))
-            {
-                outCh = ch;
-            }
-            else
-            {
-                outCh = ' ';
-            }
-
-            // normalize any whitespace character to a single ASCII space.
-            if (char.IsWhiteSpace(outCh))
-            {
-                if (!previousWasSpace)
-                {
-                    sb.Append(' ');
-                    previousWasSpace = true;
-                }
-            }
-            else
-            {
-                sb.Append(outCh);
-                previousWasSpace = false;
-            }
-        }
-
-        // trim leading/trailing spaces that may have been added.
-        var collapsed = sb.ToString().Trim();
-        return collapsed.ToLowerInvariant();
+        return value.RemoveDiacritics().ToLowerInvariant();
     }
 
     private List<(ItemValueType MagicNumber, string Value)> GetItemValuesToSave(BaseItemDto item, List<string> inheritedTags)

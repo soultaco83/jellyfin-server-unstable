@@ -1,20 +1,17 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Mime;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using AsyncKeyedLock;
 using Jellyfin.Data.Enums;
 using Jellyfin.Data.Events;
 using Jellyfin.Extensions;
-using Jellyfin.Extensions.Json;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.BaseItemManager;
@@ -67,7 +64,6 @@ namespace MediaBrowser.Providers.Manager
         private readonly PriorityQueue<(Guid ItemId, MetadataRefreshOptions RefreshOptions), RefreshPriority> _refreshQueue = new();
         private readonly IMemoryCache _memoryCache;
         private readonly IMediaSegmentManager _mediaSegmentManager;
-        private readonly ISimilarItemsManager _similarItemsManager;
         private readonly AsyncKeyedLocker<string> _imageSaveLock = new(o =>
         {
             o.PoolSize = 20;
@@ -105,7 +101,6 @@ namespace MediaBrowser.Providers.Manager
         /// <param name="lyricManager">The lyric manager.</param>
         /// <param name="memoryCache">The memory cache.</param>
         /// <param name="mediaSegmentManager">The media segment manager.</param>
-        /// <param name="similarItemsManager">The similar items manager.</param>
         public ProviderManager(
             IHttpClientFactory httpClientFactory,
             ISubtitleManager subtitleManager,
@@ -118,8 +113,7 @@ namespace MediaBrowser.Providers.Manager
             IBaseItemManager baseItemManager,
             ILyricManager lyricManager,
             IMemoryCache memoryCache,
-            IMediaSegmentManager mediaSegmentManager,
-            ISimilarItemsManager similarItemsManager)
+            IMediaSegmentManager mediaSegmentManager)
         {
             _logger = logger;
             _httpClientFactory = httpClientFactory;
@@ -686,14 +680,6 @@ namespace MediaBrowser.Providers.Manager
                 Type = MetadataPluginType.MediaSegmentProvider
             }));
 
-            // Similar items providers
-            var similarItemsProviders = _similarItemsManager.GetSimilarItemsProviders<T>();
-            pluginList.AddRange(similarItemsProviders.Select(i => new MetadataPlugin
-            {
-                Name = i.Name,
-                Type = i.Type
-            }));
-
             summary.Plugins = pluginList.ToArray();
 
             var supportedImageTypes = imageProviders.OfType<IRemoteImageProvider>()
@@ -1140,7 +1126,6 @@ namespace MediaBrowser.Providers.Manager
 
             var cancellationToken = _disposeCancellationTokenSource.Token;
 
-            libraryManager.ClearIgnoreRuleCache();
             while (_refreshQueue.TryDequeue(out var refreshItem, out _))
             {
                 if (_disposed)
@@ -1175,7 +1160,6 @@ namespace MediaBrowser.Providers.Manager
             lock (_refreshQueueLock)
             {
                 _isProcessingRefreshQueue = false;
-                libraryManager.ClearIgnoreRuleCache();
             }
         }
 

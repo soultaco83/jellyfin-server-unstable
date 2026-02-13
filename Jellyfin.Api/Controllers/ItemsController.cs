@@ -366,7 +366,6 @@ public class ItemsController : BaseJellyfinApiController
                 Years = years,
                 ImageTypes = imageTypes,
                 VideoTypes = videoTypes,
-                AudioLanguages = audioLanguages,
                 AdjacentTo = adjacentTo,
                 ItemIds = ids,
                 MinCommunityRating = minCommunityRating,

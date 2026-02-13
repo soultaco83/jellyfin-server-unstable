@@ -1483,7 +1483,7 @@ namespace MediaBrowser.Controller.Entities
                     // Items with OwnerId but no ExtraType might be alternate versions, not extras
                     if (removedExtra.ExtraType.HasValue)
                     {
-                        LibraryManager.DeleteItem(removedExtra, new DeleteOptions()
+                        LibraryManager.DeleteItemAsync(removedExtra, new DeleteOptions()
                         {
                             DeleteFileLocation = false
                         });

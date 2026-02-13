@@ -310,4 +310,10 @@ public class EncodingOptions
     /// Default is 20.
     /// </summary>
     public int TranscodingLockPoolSize { get; set; }
+
+    /// <summary>
+    /// Gets or sets the method used for audio seeking in HLS.
+    /// </summary>
+    [DefaultValue(HlsAudioSeekStrategy.DisableAccurateSeek)]
+    public HlsAudioSeekStrategy HlsAudioSeekStrategy { get; set; }
 }

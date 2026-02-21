@@ -211,6 +211,7 @@
  - [martenumberto](https://github.com/martenumberto)
  - [ZeusCraft10](https://github.com/ZeusCraft10)
  - [MarcoCoreDuo](https://github.com/MarcoCoreDuo)
+ - [MSalman5230](https://github.com/MSalman5230)
 
 # Emby Contributors
 
@@ -289,3 +290,4 @@
  - [Soumyadip Auddy](https://github.com/SoumyadipAuddy)
  - [DerMaddis](https://github.com/dermaddis)
  - [Filip Grzonkowski](https://github.com/grzonu)
+

@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Jellyfin.Data;
 using Jellyfin.Database.Implementations.Enums;
 using MediaBrowser.Controller.Authentication;
+using MediaBrowser.Controller.Devices;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Session;
@@ -19,6 +20,7 @@ namespace Jellyfin.Api.WebSocketListeners;
 public class SessionInfoWebSocketListener : BasePeriodicWebSocketListener<IEnumerable<SessionInfoDto>, WebSocketListenerState>
 {
     private readonly ISessionManager _sessionManager;
+    private readonly IDeviceManager _deviceManager;
     private bool _disposed;
 
     /// <summary>
@@ -26,10 +28,15 @@ public class SessionInfoWebSocketListener : BasePeriodicWebSocketListener<IEnume
     /// </summary>
     /// <param name="logger">Instance of the <see cref="ILogger{SessionInfoWebSocketListener}"/> interface.</param>
     /// <param name="sessionManager">Instance of the <see cref="ISessionManager"/> interface.</param>
-    public SessionInfoWebSocketListener(ILogger<SessionInfoWebSocketListener> logger, ISessionManager sessionManager)
+    /// <param name="deviceManager">Instance of the <see cref="IDeviceManager"/> interface.</param>
+    public SessionInfoWebSocketListener(
+        ILogger<SessionInfoWebSocketListener> logger,
+        ISessionManager sessionManager,
+        IDeviceManager deviceManager)
         : base(logger)
     {
         _sessionManager = sessionManager;
+        _deviceManager = deviceManager;
 
         _sessionManager.SessionStarted += OnSessionManagerSessionStarted;
         _sessionManager.SessionEnded += OnSessionManagerSessionEnded;
@@ -141,5 +148,41 @@ public class SessionInfoWebSocketListener : BasePeriodicWebSocketListener<IEnume
     private void OnSessionManagerSessionStarted(object? sender, SessionEventArgs e)
     {
         SendData(true);
+    }
+
+    private SessionInfoDto MapToDto(SessionInfo sessionInfo)
+    {
+        return new SessionInfoDto
+        {
+            PlayState = sessionInfo.PlayState,
+            AdditionalUsers = sessionInfo.AdditionalUsers,
+            Capabilities = _deviceManager.ToClientCapabilitiesDto(sessionInfo.Capabilities),
+            RemoteEndPoint = sessionInfo.RemoteEndPoint,
+            PlayableMediaTypes = sessionInfo.PlayableMediaTypes,
+            Id = sessionInfo.Id,
+            UserId = sessionInfo.UserId,
+            UserName = sessionInfo.UserName,
+            Client = sessionInfo.Client,
+            LastActivityDate = sessionInfo.LastActivityDate,
+            LastPlaybackCheckIn = sessionInfo.LastPlaybackCheckIn,
+            LastPausedDate = sessionInfo.LastPausedDate,
+            DeviceName = sessionInfo.DeviceName,
+            DeviceType = sessionInfo.DeviceType,
+            NowPlayingItem = sessionInfo.NowPlayingItem,
+            NowViewingItem = sessionInfo.NowViewingItem,
+            DeviceId = sessionInfo.DeviceId,
+            ApplicationVersion = sessionInfo.ApplicationVersion,
+            TranscodingInfo = sessionInfo.TranscodingInfo,
+            IsActive = sessionInfo.IsActive,
+            SupportsMediaControl = sessionInfo.SupportsMediaControl,
+            SupportsRemoteControl = sessionInfo.SupportsRemoteControl,
+            NowPlayingQueue = sessionInfo.NowPlayingQueue,
+            NowPlayingQueueFullItems = null, // Explicitly null to reduce payload size
+            HasCustomDeviceName = sessionInfo.HasCustomDeviceName,
+            PlaylistItemId = sessionInfo.PlaylistItemId,
+            ServerId = sessionInfo.ServerId,
+            UserPrimaryImageTag = sessionInfo.UserPrimaryImageTag,
+            SupportedCommands = sessionInfo.SupportedCommands
+        };
     }
 }

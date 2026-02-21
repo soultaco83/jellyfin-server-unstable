@@ -540,6 +540,7 @@ namespace Emby.Server.Implementations
             serviceCollection.AddSingleton<IMusicManager, MusicManager>();
 
             serviceCollection.AddSingleton<ILibraryMonitor, LibraryMonitor>();
+            serviceCollection.AddSingleton<DotIgnoreIgnoreRule>();
 
             serviceCollection.AddSingleton<ISimilarItemsManager, SimilarItemsManager>();
 

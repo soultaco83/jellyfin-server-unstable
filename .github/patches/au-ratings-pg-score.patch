@@ -1,0 +1,13 @@
+diff --git a/Emby.Server.Implementations/Localization/Ratings/au.json b/Emby.Server.Implementations/Localization/Ratings/au.json
+index 0000000..0000001 100644
+--- a/Emby.Server.Implementations/Localization/Ratings/au.json
++++ b/Emby.Server.Implementations/Localization/Ratings/au.json
+@@ -18,7 +18,7 @@
+         {
+             "ratingStrings": ["PG"],
+             "ratingScore": {
+-                "score": 15,
++                "score": 13,
+                 "subScore": 1
+             }
+         },

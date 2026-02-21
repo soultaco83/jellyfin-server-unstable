@@ -1,0 +1,20 @@
+# PR numbers to merge into this fork from jellyfin/jellyfin
+# Add/remove PR numbers here - workflow will read and update this file automatically
+12775
+14935
+14957
+15370
+15377
+15490
+15722
+15762
+15900
+15970
+15979
+15995
+16062
+16074
+16085
+#16150
+#16160
+16166

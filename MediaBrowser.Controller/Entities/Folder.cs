@@ -420,6 +420,17 @@ namespace MediaBrowser.Controller.Entities
 
                 // Create a list for our validated children
                 var newItems = new List<BaseItem>();
+                var actuallyRemoved = new List<BaseItem>();
+
+                // Build a reverse path→item lookup for detecting type changes
+                var currentChildrenByPath = new Dictionary<string, BaseItem>(StringComparer.OrdinalIgnoreCase);
+                foreach (var kvp in currentChildren)
+                {
+                    if (!string.IsNullOrEmpty(kvp.Value.Path))
+                    {
+                        currentChildrenByPath.TryAdd(kvp.Value.Path, kvp.Value);
+                    }
+                }
 
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -447,6 +458,24 @@ namespace MediaBrowser.Controller.Entities
                         continue;
                     }
 
+                    // Check if an existing item occupies the same path with different type/ID
+                    if (!string.IsNullOrEmpty(child.Path)
+                        && currentChildrenByPath.TryGetValue(child.Path, out var staleItem)
+                        && !staleItem.Id.Equals(child.Id))
+                    {
+                        Logger.LogInformation(
+                            "Item type changed at {Path}: {OldType} -> {NewType}, removing stale entry",
+                            child.Path,
+                            staleItem.GetType().Name,
+                            child.GetType().Name);
+
+                        currentChildren.Remove(staleItem.Id);
+                        currentChildrenByPath.Remove(child.Path);
+                        staleItem.SetParent(null);
+                        LibraryManager.DeleteItem(staleItem, new DeleteOptions { DeleteFileLocation = false }, this, false);
+                        actuallyRemoved.Add(staleItem);
+                    }
+
                     // Brand new item - needs to be added
                     child.SetParent(this);
                     newItems.Add(child);
@@ -456,7 +485,6 @@ namespace MediaBrowser.Controller.Entities
                 // That's all the new and changed ones - now see if any have been removed and need cleanup
                 var itemsRemoved = currentChildren.Values.Except(validChildren).ToList();
                 var shouldRemove = !IsRoot || allowRemoveRoot;
-                var actuallyRemoved = new List<BaseItem>();
                 // If it's an AggregateFolder, don't remove
                 if (shouldRemove && itemsRemoved.Count > 0)
                 {

@@ -101,7 +101,9 @@ public class FixIncorrectOwnerIdRelationships : IAsyncMigrationRoutine
                 {
                     b.Id,
                     b.Type,
-                    HasChildren = context.BaseItems.Any(c => c.OwnerId.HasValue && c.OwnerId.Value.Equals(b.Id) && c.ExtraType != null && c.ExtraType != 0)
+                    b.DateCreated,
+                    HasOwnedExtras = context.BaseItems.Any(c => c.OwnerId.HasValue && c.OwnerId.Value.Equals(b.Id)),
+                    HasDirectChildren = context.BaseItems.Any(c => c.ParentId.HasValue && c.ParentId.Value.Equals(b.Id))
                 })
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -111,10 +113,13 @@ public class FixIncorrectOwnerIdRelationships : IAsyncMigrationRoutine
                 continue;
             }
 
-            // Keep the item that has legitimate children (extras), then prefer Movie type over Video type, then lowest ID
-            var itemWithChildren = itemsWithPath.FirstOrDefault(i => i.HasChildren);
-            var movieTypeItem = itemsWithPath.FirstOrDefault(i => i.Type == "MediaBrowser.Controller.Entities.Movies.Movie");
-            var itemToKeep = itemWithChildren ?? movieTypeItem ?? itemsWithPath.MinBy(i => i.Id);
+            // Keep the item that has direct children, then owned extras, then prefer non-Folder types, then newest
+            var itemToKeep = itemsWithPath
+                .OrderByDescending(i => i.HasDirectChildren)
+                .ThenByDescending(i => i.HasOwnedExtras)
+                .ThenByDescending(i => i.Type != "MediaBrowser.Controller.Entities.Folder")
+                .ThenByDescending(i => i.DateCreated)
+                .First();
             if (itemToKeep is null)
             {
                 continue;

@@ -1,0 +1,16 @@
+diff --git a/MediaBrowser.Controller/SyncPlay/GroupMember.cs b/MediaBrowser.Controller/SyncPlay/GroupMember.cs
+index b973672c4..dfc1f2ea0 100644
+--- a/MediaBrowser.Controller/SyncPlay/GroupMember.cs
++++ b/MediaBrowser.Controller/SyncPlay/GroupMember.cs
+@@ -56,5 +56,11 @@ namespace MediaBrowser.Controller.SyncPlay
+         /// </summary>
+         /// <value><c>true</c> to ignore member on group wait; <c>false</c> if they're following group playback.</value>
+         public bool IgnoreGroupWait { get; set; }
++
++        /// <summary>
++        /// Gets or sets the last activity time for this member.
++        /// </summary>
++        /// <value>The last activity timestamp.</value>
++        public DateTime LastActivity { get; set; } = DateTime.UtcNow;
+     }
+ }

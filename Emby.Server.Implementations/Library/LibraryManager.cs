@@ -427,6 +427,17 @@ namespace Emby.Server.Implementations.Library
                     // Promote the first alternate version to be the new primary
                     var newPrimary = alternateVersions[0];
                     newPrimary.SetPrimaryVersionId(null);
+                    newPrimary.OwnerId = Guid.Empty;
+
+                    // Transfer alternate version arrays from old primary to new primary
+                    // so UpdateToRepositoryAsync creates correct LinkedChildren entries
+                    newPrimary.LocalAlternateVersions = video.LocalAlternateVersions
+                        .Where(p => !string.Equals(p, newPrimary.Path, StringComparison.OrdinalIgnoreCase))
+                        .ToArray();
+                    newPrimary.LinkedAlternateVersions = video.LinkedAlternateVersions
+                        .Where(lc => !lc.ItemId.HasValue || !lc.ItemId.Value.Equals(newPrimary.Id))
+                        .ToArray();
+
                     newPrimary.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, CancellationToken.None).GetAwaiter().GetResult();
 
                     // Re-route playlist/collection references from deleted primary to new primary
@@ -436,6 +447,7 @@ namespace Emby.Server.Implementations.Library
                     foreach (var alternate in alternateVersions.Skip(1))
                     {
                         alternate.SetPrimaryVersionId(newPrimary.Id);
+                        alternate.OwnerId = newPrimary.Id;
                         alternate.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, CancellationToken.None).GetAwaiter().GetResult();
                     }
                 }

@@ -171,7 +171,8 @@ namespace Jellyfin.LiveTv.Listings
                 var willBeCached = endDate.HasValue && endDate.Value < DateTime.UtcNow.AddDays(GuideManager.MaxCacheDays);
                 if (willBeCached && images is not null)
                 {
-                    var imageIndex = images.FindIndex(i => i.ProgramId == schedule.ProgramId);
+                    var imageIndex = images.FindIndex(i =>
+                        i.ProgramId is not null && schedule.ProgramId.StartsWith(i.ProgramId, StringComparison.Ordinal));
                     if (imageIndex > -1)
                     {
                         var programEntry = programDict[schedule.ProgramId];
@@ -938,7 +939,10 @@ namespace Jellyfin.LiveTv.Listings
         public async Task<List<ChannelInfo>> GetChannels(ListingsProviderInfo info, CancellationToken cancellationToken)
         {
             var listingsId = info.ListingsId;
-            ArgumentException.ThrowIfNullOrEmpty(listingsId);
+            if (string.IsNullOrEmpty(listingsId))
+            {
+                return [];
+            }
 
             var token = await GetToken(info, cancellationToken).ConfigureAwait(false);
 

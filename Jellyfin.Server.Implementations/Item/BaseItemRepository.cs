@@ -2815,6 +2815,14 @@ public sealed class BaseItemRepository
         var orderBy = filter.OrderBy.Where(e => e.OrderBy != ItemSortBy.Default).ToArray();
         var hasSearch = !string.IsNullOrEmpty(filter.SearchTerm);
 
+        // SeriesDatePlayed requires special handling to avoid correlated subqueries.
+        // Instead of running a MAX() subquery per-row in ORDER BY, we pre-aggregate
+        // max played dates per series in one query and left-join it.
+        if (!hasSearch && orderBy.Any(o => o.OrderBy == ItemSortBy.SeriesDatePlayed))
+        {
+            return ApplySeriesDatePlayedOrder(query, filter, context, orderBy);
+        }
+
         IOrderedQueryable<BaseItemEntity>? orderedQuery = null;
 
         if (hasSearch)
@@ -2869,6 +2877,42 @@ public sealed class BaseItemRepository
         }
 
         return orderedQuery;
+    }
+
+    private IQueryable<BaseItemEntity> ApplySeriesDatePlayedOrder(
+        IQueryable<BaseItemEntity> query,
+        InternalItemsQuery filter,
+        JellyfinDbContext context,
+        (ItemSortBy OrderBy, SortOrder SortOrder)[] orderBy)
+    {
+        // Pre-aggregate max played date per series key in ONE query.
+        // This generates a single: SELECT SeriesPresentationUniqueKey, MAX(LastPlayedDate) ... GROUP BY
+        // instead of a correlated subquery per outer row.
+        IQueryable<UserData> userDataQuery = filter.User is not null
+            ? context.UserData.Where(ud => ud.UserId == filter.User.Id && ud.Played)
+            : context.UserData.Where(ud => ud.Played);
+
+        var seriesMaxDates = userDataQuery
+            .Join(
+                context.BaseItems,
+                ud => ud.ItemId,
+                bi => bi.Id,
+                (ud, bi) => new { bi.SeriesPresentationUniqueKey, ud.LastPlayedDate })
+            .Where(x => x.SeriesPresentationUniqueKey != null)
+            .GroupBy(x => x.SeriesPresentationUniqueKey)
+            .Select(g => new { SeriesKey = g.Key!, MaxDate = g.Max(x => x.LastPlayedDate) });
+
+        var joined = query.LeftJoin(
+            seriesMaxDates,
+            e => e.PresentationUniqueKey,
+            s => s.SeriesKey,
+            (e, s) => new { Item = e, MaxDate = s != null ? s.MaxDate : (DateTime?)null });
+
+        var seriesSort = orderBy.First(o => o.OrderBy == ItemSortBy.SeriesDatePlayed);
+
+        return seriesSort.SortOrder == SortOrder.Ascending
+            ? joined.OrderBy(x => x.MaxDate).ThenBy(x => x.Item.SortName).Select(x => x.Item)
+            : joined.OrderByDescending(x => x.MaxDate).ThenBy(x => x.Item.SortName).Select(x => x.Item);
     }
 
     private IQueryable<BaseItemEntity> TranslateQuery(

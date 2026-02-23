@@ -57,26 +57,16 @@ public static class OrderMapper
             (ItemSortBy.VideoBitRate, _) => e => e.TotalBitrate,
             (ItemSortBy.ParentIndexNumber, _) => e => e.ParentIndexNumber,
             (ItemSortBy.IndexNumber, _) => e => e.IndexNumber,
+            // SeriesDatePlayed is normally handled via pre-aggregated join in ApplySeriesDatePlayedOrder.
+            // This correlated subquery fallback is only reached when combined with search.
             (ItemSortBy.SeriesDatePlayed, not null) => e =>
-                            jellyfinDbContext.BaseItems
-                                .Where(w => w.SeriesPresentationUniqueKey == e.PresentationUniqueKey)
-                                .LeftJoin(
-                                    jellyfinDbContext.UserData.Where(w => w.UserId == query.User.Id && w.Played),
-                                    item => item.Id,
-                                    userData => userData.ItemId,
-                                    (item, userData) => userData == null ? (DateTime?)null : userData.LastPlayedDate)
-                                .Max(f => f),
-            (ItemSortBy.SeriesDatePlayed, null) => e => jellyfinDbContext.BaseItems.Where(w => w.SeriesPresentationUniqueKey == e.PresentationUniqueKey)
-                                .LeftJoin(
-                                    jellyfinDbContext.UserData.Where(w => w.Played),
-                                    item => item.Id,
-                                    userData => userData.ItemId,
-                                    (item, userData) => userData == null ? (DateTime?)null : userData.LastPlayedDate)
-                                .Max(f => f),
-            // ItemSortBy.SeriesDatePlayed => e => jellyfinDbContext.UserData
-            //     .Where(u => u.Item!.SeriesPresentationUniqueKey == e.PresentationUniqueKey && u.Played)
-            //     .Max(f => f.LastPlayedDate),
-            // ItemSortBy.AiredEpisodeOrder => "AiredEpisodeOrder",
+                jellyfinDbContext.UserData
+                    .Where(w => w.UserId == query.User.Id && w.Played && w.Item!.SeriesPresentationUniqueKey == e.PresentationUniqueKey)
+                    .Max(f => f.LastPlayedDate),
+            (ItemSortBy.SeriesDatePlayed, null) => e =>
+                jellyfinDbContext.UserData
+                    .Where(w => w.Played && w.Item!.SeriesPresentationUniqueKey == e.PresentationUniqueKey)
+                    .Max(f => f.LastPlayedDate),
             _ => e => e.SortName
         };
     }

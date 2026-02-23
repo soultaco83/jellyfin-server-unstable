@@ -486,6 +486,9 @@ namespace MediaBrowser.Controller.Entities
                 var itemsRemoved = currentChildren.Values.Except(validChildren).ToList();
                 var shouldRemove = !IsRoot || allowRemoveRoot;
                 // If it's an AggregateFolder, don't remove
+                // Collect old primaries that need demotion to alternates of newly created primaries
+                var oldPrimariesToDemote = new List<(Video OldPrimary, Video NewPrimary)>();
+
                 if (shouldRemove && itemsRemoved.Count > 0)
                 {
                     // Build a set of paths that are alternate versions of valid children
@@ -517,6 +520,19 @@ namespace MediaBrowser.Controller.Entities
                             // Check if path is in LocalAlternateVersions of any valid child
                             if (!string.IsNullOrEmpty(item.Path) && alternateVersionPaths.Contains(item.Path))
                             {
+                                // If this was a primary (no PrimaryVersionId, no OwnerId), it needs demotion
+                                if (video.OwnerId.IsEmpty())
+                                {
+                                    var newPrimary = newItems
+                                        .OfType<Video>()
+                                        .FirstOrDefault(v => (v.LocalAlternateVersions ?? [])
+                                            .Any(p => string.Equals(p, item.Path, StringComparison.OrdinalIgnoreCase)));
+                                    if (newPrimary is not null)
+                                    {
+                                        oldPrimariesToDemote.Add((video, newPrimary));
+                                    }
+                                }
+
                                 Logger.LogDebug("Item path matches an alternate version, skipping deletion: {Path}", item.Path);
                                 continue;
                             }
@@ -536,6 +552,42 @@ namespace MediaBrowser.Controller.Entities
                 if (newItems.Count > 0)
                 {
                     LibraryManager.CreateItems(newItems, this, cancellationToken);
+                }
+
+                // Demote old primaries that are now alternate versions of newly created primaries
+                foreach (var (oldPrimary, newPrimary) in oldPrimariesToDemote)
+                {
+                    Logger.LogInformation(
+                        "Demoting old primary {OldName} ({OldId}) to alternate of new primary {NewName} ({NewId})",
+                        oldPrimary.Name,
+                        oldPrimary.Id,
+                        newPrimary.Name,
+                        newPrimary.Id);
+
+                    // First: update old primary's alternate items to point to new primary.
+                    // Order matters — update alternates FIRST so they don't get orphan-deleted
+                    // when old primary's arrays are cleared.
+                    var oldAlternateIds = LibraryManager.GetLocalAlternateVersionIds(oldPrimary)
+                        .Concat(LibraryManager.GetLinkedAlternateVersions(oldPrimary).Select(v => v.Id))
+                        .Distinct()
+                        .ToList();
+
+                    foreach (var altId in oldAlternateIds)
+                    {
+                        if (LibraryManager.GetItemById(altId) is Video altVideo && !altVideo.Id.Equals(newPrimary.Id))
+                        {
+                            altVideo.SetPrimaryVersionId(newPrimary.Id);
+                            altVideo.OwnerId = newPrimary.Id;
+                            await altVideo.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
+                        }
+                    }
+
+                    // Then: demote old primary — clear its arrays and set it as alternate of new primary
+                    oldPrimary.LocalAlternateVersions = [];
+                    oldPrimary.LinkedAlternateVersions = [];
+                    oldPrimary.SetPrimaryVersionId(newPrimary.Id);
+                    oldPrimary.OwnerId = newPrimary.Id;
+                    await oldPrimary.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
                 }
 
                 // After removing items, reattach any detached user data to remaining children

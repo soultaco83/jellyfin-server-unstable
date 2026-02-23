@@ -447,7 +447,7 @@ namespace Emby.Server.Implementations.Library
                     foreach (var alternate in alternateVersions.Skip(1))
                     {
                         alternate.SetPrimaryVersionId(newPrimary.Id);
-                        alternate.OwnerId = newPrimary.Id;
+                        alternate.OwnerId = Guid.Empty;
                         alternate.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, CancellationToken.None).GetAwaiter().GetResult();
                     }
                 }

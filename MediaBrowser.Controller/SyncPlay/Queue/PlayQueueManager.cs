@@ -272,7 +272,7 @@ namespace MediaBrowser.Controller.SyncPlay.Queue
         public void SetPlayingItemByIndex(int playlistIndex)
         {
             var playlist = GetPlaylistInternal();
-            if (playlistIndex < 0 || playlistIndex > playlist.Count)
+            if (playlistIndex < 0 || playlistIndex >= playlist.Count)
             {
                 PlayingItemIndex = NoPlayingItemIndex;
             }

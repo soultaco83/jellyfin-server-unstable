@@ -40,7 +40,8 @@ public class TrickplayManager : ITrickplayManager
     private readonly IApplicationPaths _appPaths;
     private readonly IPathManager _pathManager;
 
-    private static readonly AsyncNonKeyedLocker _resourcePool = new(1);
+    // Allow up to 3 concurrent videos to process trickplay (CPU-aware limit)
+    private static readonly AsyncNonKeyedLocker _resourcePool = new(Math.Max(1, Environment.ProcessorCount / 4));
     private static readonly string[] _trickplayImgExtensions = [".jpg"];
 
     /// <summary>
@@ -183,17 +184,17 @@ public class TrickplayManager : ITrickplayManager
                 options.Interval = 1000;
             }
 
-            foreach (var width in options.WidthResolutions)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                await RefreshTrickplayDataInternal(
+            // Process multiple resolutions in parallel for faster generation
+            var resolutionTasks = options.WidthResolutions.Select(width =>
+                RefreshTrickplayDataInternal(
                     video,
                     replace,
                     width,
                     options,
                     saveWithMedia,
-                    cancellationToken).ConfigureAwait(false);
-            }
+                    cancellationToken));
+
+            await Task.WhenAll(resolutionTasks).ConfigureAwait(false);
 
             // Cleanup old trickplay files
             if (Directory.Exists(trickplayDirectory))

@@ -331,6 +331,12 @@ namespace Emby.Server.Implementations.SyncPlay
         /// <param name="cancellationToken">The cancellation token.</param>
         public void HandleRequest(SessionInfo session, IGroupPlaybackRequest request, CancellationToken cancellationToken)
         {
+            // Update member activity
+            if (_participants.TryGetValue(session.Id, out GroupMember member))
+            {
+                member.LastActivity = DateTime.UtcNow;
+            }
+
             // The server's job is to maintain a consistent state for clients to reference
             // and notify clients of state changes. The actual syncing of media playback
             // happens client side. Clients are aware of the server's time and use it to sync.
@@ -438,6 +444,7 @@ namespace Emby.Server.Implementations.SyncPlay
             if (_participants.TryGetValue(session.Id, out GroupMember value))
             {
                 value.Ping = ping;
+                value.LastActivity = DateTime.UtcNow;
             }
         }
 
@@ -459,6 +466,7 @@ namespace Emby.Server.Implementations.SyncPlay
             if (_participants.TryGetValue(session.Id, out GroupMember value))
             {
                 value.IsBuffering = isBuffering;
+                value.LastActivity = DateTime.UtcNow;
             }
         }
 
@@ -504,7 +512,7 @@ namespace Emby.Server.Implementations.SyncPlay
             PlayQueue.SetPlaylist(playQueue);
             PlayQueue.SetPlayingItemByIndex(playingItemPosition);
             var item = _libraryManager.GetItemById(PlayQueue.GetPlayingItemId());
-            RunTimeTicks = item.RunTimeTicks ?? 0;
+            RunTimeTicks = item?.RunTimeTicks ?? 0;
             PositionTicks = startPositionTicks;
             LastActivity = DateTime.UtcNow;
 
@@ -519,7 +527,7 @@ namespace Emby.Server.Implementations.SyncPlay
             if (itemFound)
             {
                 var item = _libraryManager.GetItemById(PlayQueue.GetPlayingItemId());
-                RunTimeTicks = item.RunTimeTicks ?? 0;
+                RunTimeTicks = item?.RunTimeTicks ?? 0;
             }
             else
             {
@@ -551,7 +559,7 @@ namespace Emby.Server.Implementations.SyncPlay
                 if (!itemId.IsEmpty())
                 {
                     var item = _libraryManager.GetItemById(itemId);
-                    RunTimeTicks = item.RunTimeTicks ?? 0;
+                    RunTimeTicks = item?.RunTimeTicks ?? 0;
                 }
                 else
                 {
@@ -611,7 +619,7 @@ namespace Emby.Server.Implementations.SyncPlay
             if (update)
             {
                 var item = _libraryManager.GetItemById(PlayQueue.GetPlayingItemId());
-                RunTimeTicks = item.RunTimeTicks ?? 0;
+                RunTimeTicks = item?.RunTimeTicks ?? 0;
                 RestartCurrentItem();
                 return true;
             }
@@ -626,7 +634,7 @@ namespace Emby.Server.Implementations.SyncPlay
             if (update)
             {
                 var item = _libraryManager.GetItemById(PlayQueue.GetPlayingItemId());
-                RunTimeTicks = item.RunTimeTicks ?? 0;
+                RunTimeTicks = item?.RunTimeTicks ?? 0;
                 RestartCurrentItem();
                 return true;
             }
@@ -674,6 +682,27 @@ namespace Emby.Server.Implementations.SyncPlay
                 isPlaying,
                 PlayQueue.ShuffleMode,
                 PlayQueue.RepeatMode);
+        }
+
+        /// <summary>
+        /// Gets a list of stale sessions that have been inactive for too long.
+        /// </summary>
+        /// <param name="staleThresholdMs">The threshold in milliseconds for considering a session stale.</param>
+        /// <returns>List of stale session IDs.</returns>
+        public List<string> GetStaleSessions(long staleThresholdMs = 300000)
+        {
+            var staleSessions = new List<string>();
+            var threshold = DateTime.UtcNow.AddMilliseconds(-staleThresholdMs);
+
+            foreach (var (sessionId, member) in _participants)
+            {
+                if (member.LastActivity < threshold)
+                {
+                    staleSessions.Add(sessionId);
+                }
+            }
+
+            return staleSessions;
         }
     }
 }

@@ -472,7 +472,7 @@ namespace MediaBrowser.Controller.Entities
                         currentChildren.Remove(staleItem.Id);
                         currentChildrenByPath.Remove(child.Path);
                         staleItem.SetParent(null);
-                        LibraryManager.DeleteItem(staleItem, new DeleteOptions { DeleteFileLocation = false }, this, false);
+                        await LibraryManager.DeleteItemAsync(staleItem, new DeleteOptions { DeleteFileLocation = false }, cancellationToken).ConfigureAwait(false);
                         actuallyRemoved.Add(staleItem);
                     }
 

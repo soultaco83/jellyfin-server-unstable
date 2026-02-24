@@ -3960,7 +3960,12 @@ public sealed class BaseItemRepository
         if (filter.HasSpecialFeature.HasValue)
         {
             var itemsWithExtras = context.BaseItems
-                .Where(extra => extra.OwnerId != null)
+                .Where(extra => extra.OwnerId != null
+                    && extra.ExtraType != null
+                    && extra.ExtraType != BaseItemExtraType.Unknown
+                    && extra.ExtraType != BaseItemExtraType.Trailer
+                    && extra.ExtraType != BaseItemExtraType.ThemeSong
+                    && extra.ExtraType != BaseItemExtraType.ThemeVideo)
                 .Select(extra => extra.OwnerId!.Value)
                 .Distinct();
 

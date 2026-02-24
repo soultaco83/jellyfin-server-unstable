@@ -519,8 +519,13 @@ namespace MediaBrowser.MediaEncoding.Subtitles
 
                 if (extractableStreams.Count > 0)
                 {
-                    await ExtractAllExtractableSubtitlesInternal(mediaSource, extractableStreams, cancellationToken).ConfigureAwait(false);
-                    await ExtractAllExtractableSubtitlesMKS(mediaSource, extractableStreams, cancellationToken).ConfigureAwait(false);
+                    // Process regular and MKS subtitle extraction in parallel
+                    var extractionTasks = new[]
+                    {
+                        ExtractAllExtractableSubtitlesInternal(mediaSource, extractableStreams, cancellationToken),
+                        ExtractAllExtractableSubtitlesMKS(mediaSource, extractableStreams, cancellationToken)
+                    };
+                    await Task.WhenAll(extractionTasks).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)

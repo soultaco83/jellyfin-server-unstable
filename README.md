@@ -17,13 +17,13 @@ The following PRs are automatically merged into this fork:
 - [Upstream PR #15970](https://github.com/jellyfin/jellyfin/pull/15970)
 - [Upstream PR #15979](https://github.com/jellyfin/jellyfin/pull/15979)
 - [Upstream PR #15995](https://github.com/jellyfin/jellyfin/pull/15995)
-- Local Forgejo PR #2
 - [Upstream PR #16062](https://github.com/jellyfin/jellyfin/pull/16062)
 - [Upstream PR #16074](https://github.com/jellyfin/jellyfin/pull/16074)
 - [Upstream PR #16085](https://github.com/jellyfin/jellyfin/pull/16085)
 - [Upstream PR #16160](https://github.com/jellyfin/jellyfin/pull/16160)
 - [Upstream PR #16166](https://github.com/jellyfin/jellyfin/pull/16166)
 - Local Forgejo PR #1
+- Local Forgejo PR #3
 
 ---
 ---

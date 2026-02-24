@@ -40,7 +40,8 @@ public class TrickplayManager : ITrickplayManager
     private readonly IApplicationPaths _appPaths;
     private readonly IPathManager _pathManager;
 
-    private static readonly AsyncNonKeyedLocker _resourcePool = new(1);
+    // Allow up to 3 concurrent videos to process trickplay (CPU-aware limit)
+    private static readonly AsyncNonKeyedLocker _resourcePool = new(Math.Max(1, Environment.ProcessorCount / 4));
     private static readonly string[] _trickplayImgExtensions = [".jpg"];
 
     /// <summary>

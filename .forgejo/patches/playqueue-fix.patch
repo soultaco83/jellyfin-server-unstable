@@ -1,0 +1,13 @@
+diff --git a/MediaBrowser.Controller/SyncPlay/Queue/PlayQueueManager.cs b/MediaBrowser.Controller/SyncPlay/Queue/PlayQueueManager.cs
+index c0a168192..18f740178 100644
+--- a/MediaBrowser.Controller/SyncPlay/Queue/PlayQueueManager.cs
++++ b/MediaBrowser.Controller/SyncPlay/Queue/PlayQueueManager.cs
+@@ -272,7 +272,7 @@ namespace MediaBrowser.Controller.SyncPlay.Queue
+         public void SetPlayingItemByIndex(int playlistIndex)
+         {
+             var playlist = GetPlaylistInternal();
+-            if (playlistIndex < 0 || playlistIndex > playlist.Count)
++            if (playlistIndex < 0 || playlistIndex >= playlist.Count)
+             {
+                 PlayingItemIndex = NoPlayingItemIndex;
+             }

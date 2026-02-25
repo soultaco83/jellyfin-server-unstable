@@ -442,7 +442,7 @@ namespace Emby.Server.Implementations.Library
                         .Where(lc => !lc.ItemId.HasValue || !lc.ItemId.Value.Equals(newPrimary.Id))
                         .ToArray();
 
-                    newPrimary.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, CancellationToken.None).GetAwaiter().GetResult();
+                    await newPrimary.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
 
                     // Re-route playlist/collection references from deleted primary to new primary
                     _itemRepository.RerouteLinkedChildren(video.Id, newPrimary.Id);
@@ -452,7 +452,7 @@ namespace Emby.Server.Implementations.Library
                     {
                         alternate.SetPrimaryVersionId(newPrimary.Id);
                         alternate.OwnerId = Guid.Empty;
-                        alternate.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, CancellationToken.None).GetAwaiter().GetResult();
+                        await alternate.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
                     }
                 }
             }
@@ -736,7 +736,7 @@ namespace Emby.Server.Implementations.Library
                         wrongTypeItem.GetType().Name,
                         expectedVideoType.Name,
                         path);
-                    DeleteItem(wrongTypeItem, new DeleteOptions { DeleteFileLocation = false });
+                    DeleteItemAsync(wrongTypeItem, new DeleteOptions { DeleteFileLocation = false }).GetAwaiter().GetResult();
                 }
             }
 

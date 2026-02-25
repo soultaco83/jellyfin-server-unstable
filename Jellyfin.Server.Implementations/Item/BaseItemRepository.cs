@@ -123,7 +123,23 @@ public sealed class BaseItemRepository
 
         var date = (DateTime?)DateTime.UtcNow;
 
-        var relatedItems = ids.SelectMany(f => TraverseHirachyDown(f, dbContext)).ToArray();
+        var descendantIds = ids.SelectMany(f => DescendantQueryHelper.GetOwnedDescendantIds(dbContext, f)).ToHashSet();
+        foreach (var id in ids)
+        {
+            descendantIds.Add(id);
+        }
+
+        var extraIds = await dbContext.BaseItems
+            .Where(e => e.OwnerId.HasValue && descendantIds.Contains(e.OwnerId.Value))
+            .Select(e => e.Id)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var extraId in extraIds)
+        {
+            descendantIds.Add(extraId);
+        }
+
+        var relatedItems = descendantIds.ToArray();
 
         // Remove any UserData entries for the placeholder item that would conflict with the UserData
         // being detached from the item being deleted. This is necessary because, during an update,

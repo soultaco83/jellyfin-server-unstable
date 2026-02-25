@@ -37,12 +37,8 @@ public class GuideManager : IGuideManager
     private readonly ILiveTvManager _liveTvManager;
     private readonly ITunerHostManager _tunerHostManager;
     private readonly IRecordingsManager _recordingsManager;
+    private readonly ISchedulesDirectService _schedulesDirectService;
     private readonly LiveTvDtoService _tvDtoService;
-
-    /// <summary>
-    /// UTC date when the SD image download limit was hit. Cleared after 00:00 UTC rollover.
-    /// </summary>
-    private DateTime? _sdImageLimitHitDate;
 
     /// <summary>
     /// Amount of days images are pre-cached from external sources.
@@ -60,6 +56,7 @@ public class GuideManager : IGuideManager
     /// <param name="liveTvManager">The <see cref="ILiveTvManager"/>.</param>
     /// <param name="tunerHostManager">The <see cref="ITunerHostManager"/>.</param>
     /// <param name="recordingsManager">The <see cref="IRecordingsManager"/>.</param>
+    /// <param name="schedulesDirectService">The <see cref="ISchedulesDirectService"/>.</param>
     /// <param name="tvDtoService">The <see cref="LiveTvDtoService"/>.</param>
     public GuideManager(
         ILogger<GuideManager> logger,
@@ -70,6 +67,7 @@ public class GuideManager : IGuideManager
         ILiveTvManager liveTvManager,
         ITunerHostManager tunerHostManager,
         IRecordingsManager recordingsManager,
+        ISchedulesDirectService schedulesDirectService,
         LiveTvDtoService tvDtoService)
     {
         _logger = logger;
@@ -80,6 +78,7 @@ public class GuideManager : IGuideManager
         _liveTvManager = liveTvManager;
         _tunerHostManager = tunerHostManager;
         _recordingsManager = recordingsManager;
+        _schedulesDirectService = schedulesDirectService;
         _tvDtoService = tvDtoService;
     }
 
@@ -726,23 +725,9 @@ public class GuideManager : IGuideManager
         return false;
     }
 
-    private bool IsSdImageLimitActive()
-    {
-        // The SD image counter resets daily at 00:00 UTC.
-        // If we recorded a limit hit on a previous UTC date, clear it.
-        var hitDate = _sdImageLimitHitDate;
-        if (hitDate.HasValue && hitDate.Value.Date < DateTime.UtcNow.Date)
-        {
-            _sdImageLimitHitDate = null;
-            return false;
-        }
-
-        return hitDate.HasValue;
-    }
-
     private async Task PreCacheImages(IReadOnlyList<BaseItem> programs, DateTime maxCacheDate)
     {
-        var sdLimitActive = IsSdImageLimitActive();
+        var sdLimitActive = _schedulesDirectService.IsImageDailyLimitActive();
 
         await Parallel.ForEachAsync(
             programs
@@ -768,7 +753,7 @@ public class GuideManager : IGuideManager
 
                     // Skip SD downloads once the daily limit has been hit.
                     if (imageInfo.Path.Contains("schedulesdirect", StringComparison.OrdinalIgnoreCase)
-                        && IsSdImageLimitActive())
+                        && _schedulesDirectService.IsImageDailyLimitActive())
                     {
                         continue;
                     }
@@ -785,18 +770,7 @@ public class GuideManager : IGuideManager
                     }
                     catch (Exception ex)
                     {
-                        if (imageInfo.Path.Contains("schedulesdirect", StringComparison.OrdinalIgnoreCase)
-                            && !_sdImageLimitHitDate.HasValue)
-                        {
-                            _sdImageLimitHitDate = DateTime.UtcNow;
-                            _logger.LogWarning(
-                                "Schedules Direct image download failed for {Url}. Daily download limit may have been reached (resets at 00:00 UTC). Skipping remaining SD images until reset",
-                                imageInfo.Path);
-                        }
-                        else if (!imageInfo.Path.Contains("schedulesdirect", StringComparison.OrdinalIgnoreCase))
-                        {
-                            _logger.LogWarning(ex, "Unable to pre-cache {Url}", imageInfo.Path);
-                        }
+                        _logger.LogWarning(ex, "Unable to pre-cache {Url}", imageInfo.Path);
                     }
                 }
             }).ConfigureAwait(false);

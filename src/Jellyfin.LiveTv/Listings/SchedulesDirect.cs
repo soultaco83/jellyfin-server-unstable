@@ -50,8 +50,8 @@ namespace Jellyfin.LiveTv.Listings
         private bool _disposed = false;
 
         private byte[] _countriesCache;
-        private DateTime? _imageLimitHitDate;
-        private DateTime? _metadataLimitHitDate;
+        private DateOnly? _imageLimitHitDate;
+        private DateOnly? _metadataLimitHitDate;
 
         public SchedulesDirect(
             ILogger<SchedulesDirect> logger,
@@ -61,8 +61,8 @@ namespace Jellyfin.LiveTv.Listings
             _logger = logger;
             _httpClientFactory = httpClientFactory;
             _appPaths = appPaths;
-            _imageLimitHitDate = LoadDailyLimitFile(ImageLimitFilePath);
-            _metadataLimitHitDate = LoadDailyLimitFile(MetadataLimitFilePath);
+            _imageLimitHitDate = LoadDailyLimitDate(ImageLimitFilePath);
+            _metadataLimitHitDate = LoadDailyLimitDate(MetadataLimitFilePath);
         }
 
         /// <inheritdoc />
@@ -93,7 +93,7 @@ namespace Jellyfin.LiveTv.Listings
 
         public async Task<IEnumerable<ProgramInfo>> GetProgramsAsync(ListingsProviderInfo info, string channelId, DateTime startDateUtc, DateTime endDateUtc, CancellationToken cancellationToken)
         {
-            if (IsDailyLimitActive(ref _metadataLimitHitDate, MetadataLimitFilePath))
+            if (IsMetadataLimitActive())
             {
                 return [];
             }
@@ -474,7 +474,7 @@ namespace Jellyfin.LiveTv.Listings
             IReadOnlyList<string> programIds,
             CancellationToken cancellationToken)
         {
-            if (IsDailyLimitActive(ref _imageLimitHitDate, ImageLimitFilePath))
+            if (IsImageDailyLimitActive())
             {
                 return [];
             }
@@ -502,7 +502,20 @@ namespace Jellyfin.LiveTv.Listings
                     var batchResult = await Request<IReadOnlyList<ShowImagesDto>>(message, true, info, cancellationToken).ConfigureAwait(false);
                     if (batchResult is not null)
                     {
-                        results.AddRange(batchResult);
+                        foreach (var entry in batchResult)
+                        {
+                            if (entry.Code.HasValue)
+                            {
+                                _logger.LogWarning(
+                                    "Schedules Direct returned error for program {ProgramId}: code={Code}, message={Message}",
+                                    entry.ProgramId,
+                                    entry.Code,
+                                    entry.Message);
+                                continue;
+                            }
+
+                            results.Add(entry);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -648,13 +661,15 @@ namespace Jellyfin.LiveTv.Listings
             var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
             // Try to extract the Schedules Direct error code from the response body.
-            int? sdCode = null;
+            SdErrorCode? sdCode = null;
             try
             {
                 using var doc = JsonDocument.Parse(responseBody);
-                if (doc.RootElement.TryGetProperty("code", out var codeProp) && codeProp.TryGetInt32(out var parsedCode))
+                if (doc.RootElement.TryGetProperty("code", out var codeProp)
+                    && codeProp.TryGetInt32(out var parsedCode)
+                    && Enum.IsDefined((SdErrorCode)parsedCode))
                 {
-                    sdCode = parsedCode;
+                    sdCode = (SdErrorCode)parsedCode;
                 }
             }
             catch (JsonException)
@@ -666,44 +681,37 @@ namespace Jellyfin.LiveTv.Listings
                 "Request to {Url} failed with HTTP {StatusCode}, SD code {SdCode}: {Response}",
                 message.RequestUri,
                 (int)response.StatusCode,
-                sdCode?.ToString(CultureInfo.InvariantCulture) ?? "N/A",
+                sdCode?.ToString() ?? "N/A",
                 responseBody);
 
-            if (sdCode is 4001 or 4003 or 4004 or 4005 or 4008)
+            if (sdCode is SdErrorCode.InvalidUser or SdErrorCode.InvalidHash or SdErrorCode.AccountLocked or SdErrorCode.AccountExpired or SdErrorCode.PasswordRequired)
             {
                 // Permanent account errors — disable SD for this server lifetime.
-                // 4001=invalid user
-                // 4003=invalid hash
-                // 4004=account locked/disabled
-                // 4005=account expired
-                // 4008=password required
                 _logger.LogError("Schedules Direct account error (code {SdCode}). Disabling SD until server restart", sdCode);
                 _tokens.Clear();
                 _accountError = true;
             }
-            else if (sdCode is 4009 or 4010)
+            else if (sdCode is SdErrorCode.MaxLoginAttempts or SdErrorCode.TemporaryLockout)
             {
                 // Transient login errors — back off for 30 minutes, then allow retry.
-                // 4009=max login attempts
-                // 4010=temporary lockout
                 _tokens.Clear();
                 _lastErrorResponse = DateTime.UtcNow;
             }
-            else if (sdCode is 5002)
+            else if (sdCode is SdErrorCode.MaxImageDownloads)
             {
                 // Max image downloads — stop image requests until SD resets at 00:00 UTC.
-                SetDailyLimitHitDate(ref _imageLimitHitDate, ImageLimitFilePath);
+                SetImageLimitHit();
             }
-            else if (sdCode is 5003)
+            else if (sdCode is SdErrorCode.MaxScheduleRequests)
             {
                 // Max schedule/metadata requests — stop metadata requests until SD resets at 00:00 UTC.
-                SetDailyLimitHitDate(ref _metadataLimitHitDate, MetadataLimitFilePath);
+                SetMetadataLimitHit();
             }
             else if (enableRetry
                 && (int)response.StatusCode < 500
-                && (sdCode == 4006 || (response.StatusCode == HttpStatusCode.Forbidden && sdCode is null)))
+                && (sdCode == SdErrorCode.TokenExpired || (response.StatusCode == HttpStatusCode.Forbidden && sdCode is null)))
             {
-                // 4006 = token expired — clear tokens and retry with a fresh token.
+                // Token expired — clear tokens and retry with a fresh token.
                 // Also retry on 403 with no parseable SD code (legacy/unexpected auth failure).
                 _tokens.Clear();
                 using var retryMessage = new HttpRequestMessage(message.Method, message.RequestUri);
@@ -800,11 +808,11 @@ namespace Jellyfin.LiveTv.Listings
         }
 
         /// <inheritdoc />
-        public async Task<byte[]> GetAvailableCountries(CancellationToken cancellationToken)
+        public async Task<Stream> GetAvailableCountries(CancellationToken cancellationToken)
         {
             if (_countriesCache is not null)
             {
-                return _countriesCache;
+                return new MemoryStream(_countriesCache, writable: false);
             }
 
             var cachePath = Path.Combine(_appPaths.CachePath, "sd-countries.json");
@@ -815,7 +823,7 @@ namespace Jellyfin.LiveTv.Listings
                 try
                 {
                     _countriesCache = await File.ReadAllBytesAsync(cachePath, cancellationToken).ConfigureAwait(false);
-                    return _countriesCache;
+                    return new MemoryStream(_countriesCache, writable: false);
                 }
                 catch (IOException)
                 {
@@ -833,10 +841,10 @@ namespace Jellyfin.LiveTv.Listings
             await File.WriteAllBytesAsync(cachePath, bytes, cancellationToken).ConfigureAwait(false);
 
             _countriesCache = bytes;
-            return bytes;
+            return new MemoryStream(bytes, writable: false);
         }
 
-        private static DateTime? LoadDailyLimitFile(string path)
+        private static DateOnly? LoadDailyLimitDate(string path)
         {
             if (!File.Exists(path))
             {
@@ -848,14 +856,15 @@ namespace Jellyfin.LiveTv.Listings
                 var text = File.ReadAllText(path).Trim();
                 if (DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var date))
                 {
-                    if (date.Date < DateTime.UtcNow.Date)
+                    var dateOnly = DateOnly.FromDateTime(date);
+                    if (dateOnly < DateOnly.FromDateTime(DateTime.UtcNow))
                     {
                         // Expired — clean up.
                         File.Delete(path);
                         return null;
                     }
 
-                    return date;
+                    return dateOnly;
                 }
             }
             catch (IOException)
@@ -867,26 +876,55 @@ namespace Jellyfin.LiveTv.Listings
             return null;
         }
 
-        private bool IsDailyLimitActive(ref DateTime? hitDate, string filePath)
+        /// <inheritdoc />
+        public bool IsImageDailyLimitActive()
         {
-            if (!hitDate.HasValue)
+            if (!_imageLimitHitDate.HasValue)
             {
                 return false;
             }
 
-            if (hitDate.Value.Date < DateTime.UtcNow.Date)
+            if (_imageLimitHitDate.Value < DateOnly.FromDateTime(DateTime.UtcNow))
             {
-                hitDate = null;
-                TryDeleteFile(filePath);
+                _imageLimitHitDate = null;
+                TryDeleteFile(ImageLimitFilePath);
                 return false;
             }
 
             return true;
         }
 
-        private void SetDailyLimitHitDate(ref DateTime? hitDate, string filePath)
+        private bool IsMetadataLimitActive()
         {
-            hitDate = DateTime.UtcNow;
+            if (!_metadataLimitHitDate.HasValue)
+            {
+                return false;
+            }
+
+            if (_metadataLimitHitDate.Value < DateOnly.FromDateTime(DateTime.UtcNow))
+            {
+                _metadataLimitHitDate = null;
+                TryDeleteFile(MetadataLimitFilePath);
+                return false;
+            }
+
+            return true;
+        }
+
+        private void SetImageLimitHit()
+        {
+            _imageLimitHitDate = DateOnly.FromDateTime(DateTime.UtcNow);
+            PersistDailyLimitFile(ImageLimitFilePath);
+        }
+
+        private void SetMetadataLimitHit()
+        {
+            _metadataLimitHitDate = DateOnly.FromDateTime(DateTime.UtcNow);
+            PersistDailyLimitFile(MetadataLimitFilePath);
+        }
+
+        private void PersistDailyLimitFile(string filePath)
+        {
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);

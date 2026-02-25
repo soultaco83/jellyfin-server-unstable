@@ -110,17 +110,16 @@ public class TunerHostManager : ITunerHostManager
         // Clean up the disk cache file for this tuner
         if (!string.IsNullOrEmpty(id))
         {
-            var channelCacheFile = Path.Combine(_config.CommonApplicationPaths.CachePath, id + "_channels");
-            if (File.Exists(channelCacheFile))
+            // Sanitize to prevent path traversal — tuner IDs are GUIDs but come from config.
+            var safeId = Path.GetFileName(id);
+            var channelCacheFile = Path.Combine(_config.CommonApplicationPaths.CachePath, safeId + "_channels");
+            try
             {
-                try
-                {
-                    File.Delete(channelCacheFile);
-                }
-                catch (IOException ex)
-                {
-                    _logger.LogWarning(ex, "Error deleting channel cache file for tuner {TunerId}", id);
-                }
+                File.Delete(channelCacheFile);
+            }
+            catch (IOException ex)
+            {
+                _logger.LogWarning(ex, "Error deleting channel cache file for tuner {TunerId}", id);
             }
         }
 

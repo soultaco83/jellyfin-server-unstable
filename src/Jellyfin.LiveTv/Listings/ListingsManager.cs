@@ -341,17 +341,15 @@ public class ListingsManager : IListingsManager
         var cachePath = _config.CommonApplicationPaths?.CachePath;
         if (!string.IsNullOrEmpty(cachePath))
         {
-            var xmltvCacheFile = Path.Combine(cachePath, "xmltv", providerId + ".xml");
-            if (File.Exists(xmltvCacheFile))
+            var safeId = Path.GetFileName(providerId);
+            var xmltvCacheFile = Path.Combine(cachePath, "xmltv", safeId + ".xml");
+            try
             {
-                try
-                {
-                    File.Delete(xmltvCacheFile);
-                }
-                catch (IOException ex)
-                {
-                    _logger.LogWarning(ex, "Error deleting XMLTV cache file for provider {ProviderId}", providerId);
-                }
+                File.Delete(xmltvCacheFile);
+            }
+            catch (IOException ex)
+            {
+                _logger.LogWarning(ex, "Error deleting XMLTV cache file for provider {ProviderId}", providerId);
             }
         }
     }

@@ -1059,8 +1059,8 @@ public class LiveTvController : BaseJellyfinApiController
     [ProducesFile(MediaTypeNames.Application.Json)]
     public async Task<ActionResult> GetSchedulesDirectCountries()
     {
-        var bytes = await _schedulesDirectService.GetAvailableCountries(CancellationToken.None).ConfigureAwait(false);
-        return File(bytes, MediaTypeNames.Application.Json);
+        var stream = await _schedulesDirectService.GetAvailableCountries(CancellationToken.None).ConfigureAwait(false);
+        return File(stream, MediaTypeNames.Application.Json);
     }
 
     /// <summary>

@@ -514,7 +514,7 @@ namespace MediaBrowser.Controller.Entities
                 if (LibraryManager.GetItemById(id) is Video orphanedVideo && orphanedVideo.OwnerId.Equals(Id))
                 {
                     Logger.LogInformation("Owned video file no longer exists, removing orphaned item: {Path}", path);
-                    LibraryManager.DeleteItem(orphanedVideo, new DeleteOptions { DeleteFileLocation = false });
+                    await LibraryManager.DeleteItemAsync(orphanedVideo, new DeleteOptions { DeleteFileLocation = false }, cancellationToken).ConfigureAwait(false);
                 }
 
                 return;

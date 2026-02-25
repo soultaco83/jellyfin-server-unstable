@@ -25,6 +25,8 @@ The following PRs are automatically merged into this fork:
 - Local Forgejo PR #1
 - Local Forgejo PR #3
 - Local Forgejo PR #4
+- Local Forgejo PR #5
+- Local Forgejo PR #6
 
 ---
 ---

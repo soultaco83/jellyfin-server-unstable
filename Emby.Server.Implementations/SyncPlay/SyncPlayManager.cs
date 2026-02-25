@@ -19,6 +19,11 @@ namespace Emby.Server.Implementations.SyncPlay
     public class SyncPlayManager : ISyncPlayManager, IDisposable
     {
         /// <summary>
+        /// The stale session threshold in milliseconds (default: 5 minutes).
+        /// </summary>
+        private const long StaleSessionThresholdMs = 300000;
+
+        /// <summary>
         /// The logger.
         /// </summary>
         private readonly ILogger<SyncPlayManager> _logger;
@@ -69,6 +74,11 @@ namespace Emby.Server.Implementations.SyncPlay
         /// </remarks>
         private readonly Lock _groupsLock = new();
 
+        /// <summary>
+        /// Timer for periodic stale session cleanup.
+        /// </summary>
+        private Timer _staleSessionCleanupTimer;
+
         private bool _disposed = false;
 
         /// <summary>
@@ -90,6 +100,13 @@ namespace Emby.Server.Implementations.SyncPlay
             _libraryManager = libraryManager;
             _logger = loggerFactory.CreateLogger<SyncPlayManager>();
             _sessionManager.SessionEnded += OnSessionEnded;
+
+            // Start periodic cleanup timer (runs every 2 minutes)
+            _staleSessionCleanupTimer = new Timer(
+                CleanupStaleSessions,
+                null,
+                TimeSpan.FromMinutes(2),
+                TimeSpan.FromMinutes(2));
         }
 
         /// <inheritdoc />
@@ -269,19 +286,25 @@ namespace Emby.Server.Implementations.SyncPlay
             }
 
             var user = _userManager.GetUserById(session.UserId);
-            List<GroupInfoDto> list = new List<GroupInfoDto>();
 
+            // Take a snapshot of groups to minimize time holding the global lock
+            Group[] groupSnapshot;
             lock (_groupsLock)
             {
-                foreach (var (_, group) in _groups)
+                groupSnapshot = new Group[_groups.Count];
+                _groups.Values.CopyTo(groupSnapshot, 0);
+            }
+
+            // Process groups without holding the global lock
+            List<GroupInfoDto> list = new List<GroupInfoDto>(groupSnapshot.Length);
+            foreach (var group in groupSnapshot)
+            {
+                // Locking required as group is not thread-safe.
+                lock (group)
                 {
-                    // Locking required as group is not thread-safe.
-                    lock (group)
+                    if (group.HasAccessToPlayQueue(user))
                     {
-                        if (group.HasAccessToPlayQueue(user))
-                        {
-                            list.Add(group.GetInfo());
-                        }
+                        list.Add(group.GetInfo());
                     }
                 }
             }
@@ -296,17 +319,15 @@ namespace Emby.Server.Implementations.SyncPlay
 
             var user = _userManager.GetUserById(session.UserId);
 
-            lock (_groupsLock)
+            // Try to get the specific group directly without iterating all groups
+            if (_groups.TryGetValue(groupId, out var group))
             {
-                foreach (var (_, group) in _groups)
+                // Locking required as group is not thread-safe.
+                lock (group)
                 {
-                    // Locking required as group is not thread-safe.
-                    lock (group)
+                    if (group.HasAccessToPlayQueue(user))
                     {
-                        if (group.GroupId.Equals(groupId) && group.HasAccessToPlayQueue(user))
-                        {
-                            return group.GetInfo();
-                        }
+                        return group.GetInfo();
                     }
                 }
             }
@@ -380,6 +401,11 @@ namespace Emby.Server.Implementations.SyncPlay
                 return;
             }
 
+            if (disposing)
+            {
+                _staleSessionCleanupTimer?.Dispose();
+            }
+
             _sessionManager.SessionEnded -= OnSessionEnded;
             _disposed = true;
         }
@@ -413,6 +439,50 @@ namespace Emby.Server.Implementations.SyncPlay
             if (newSessionsCounter == 0)
             {
                 _activeUsers.TryRemove(new KeyValuePair<Guid, int>(userId, newSessionsCounter));
+            }
+        }
+
+        private async void CleanupStaleSessions(object state)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            try
+            {
+                // Take a snapshot of groups to check
+                Group[] groupSnapshot;
+                lock (_groupsLock)
+                {
+                    groupSnapshot = new Group[_groups.Count];
+                    _groups.Values.CopyTo(groupSnapshot, 0);
+                }
+
+                foreach (var group in groupSnapshot)
+                {
+                    List<string> staleSessions;
+                    lock (group)
+                    {
+                        staleSessions = group.GetStaleSessions(StaleSessionThresholdMs);
+                    }
+
+                    // Remove stale sessions
+                    foreach (var sessionId in staleSessions)
+                    {
+                        var session = await _sessionManager.GetSessionByAuthenticationToken(sessionId, string.Empty, string.Empty).ConfigureAwait(false);
+                        if (session is not null)
+                        {
+                            _logger.LogInformation("Removing stale session {SessionId} from SyncPlay group {GroupId}.", sessionId, group.GroupId);
+                            var leaveRequest = new LeaveGroupRequest();
+                            LeaveGroup(session, leaveRequest, CancellationToken.None);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during stale session cleanup.");
             }
         }
     }

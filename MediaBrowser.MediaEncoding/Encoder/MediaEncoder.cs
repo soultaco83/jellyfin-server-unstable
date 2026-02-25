@@ -1055,11 +1055,16 @@ namespace MediaBrowser.MediaEncoding.Encoder
                     var timeoutMs = _configurationManager.Configuration.ImageExtractionTimeoutMs;
                     timeoutMs = timeoutMs <= 0 ? DefaultHdrImageExtractionTimeout : timeoutMs;
 
+                    // Use longer timeout for first check to allow hardware acceleration initialization
+                    // Hardware decoders (VAAPI, QSV, NVDEC, etc.) can take 2-5 seconds to initialize
+                    var currentTimeoutMs = timeoutMs * 3;
+                    bool isFirstCheck = true;
+
                     while (isResponsive && !cancellationToken.IsCancellationRequested)
                     {
                         try
                         {
-                            await process.WaitForExitAsync(TimeSpan.FromMilliseconds(timeoutMs)).ConfigureAwait(false);
+                            await process.WaitForExitAsync(TimeSpan.FromMilliseconds(currentTimeoutMs)).ConfigureAwait(false);
 
                             ranToCompletion = true;
                             break;
@@ -1073,6 +1078,13 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
                         isResponsive = jpegCount > lastCount;
                         lastCount = jpegCount;
+
+                        // After first check, use normal timeout for subsequent checks
+                        if (isFirstCheck)
+                        {
+                            currentTimeoutMs = timeoutMs;
+                            isFirstCheck = false;
+                        }
                     }
 
                     if (!ranToCompletion)

@@ -24,6 +24,7 @@ The following PRs are automatically merged into this fork:
 - [Upstream PR #16166](https://github.com/jellyfin/jellyfin/pull/16166)
 - Local Forgejo PR #1
 - Local Forgejo PR #3
+- Local Forgejo PR #4
 
 ---
 ---

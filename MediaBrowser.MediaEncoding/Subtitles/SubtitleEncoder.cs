@@ -720,6 +720,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             }
             else
             {
+                var assPostProcessTasks = new List<Task>();
                 foreach (var outputPath in outputPaths)
                 {
                     if (!File.Exists(outputPath))
@@ -731,11 +732,13 @@ namespace MediaBrowser.MediaEncoding.Subtitles
 
                     if (outputPath.EndsWith("ass", StringComparison.OrdinalIgnoreCase))
                     {
-                        await SetAssFont(outputPath, cancellationToken).ConfigureAwait(false);
+                        assPostProcessTasks.Add(SetAssFont(outputPath, cancellationToken));
                     }
 
                     _logger.LogInformation("ffmpeg subtitle extraction completed for {InputPath} to {OutputPath}", inputPath, outputPath);
                 }
+
+                await Task.WhenAll(assPostProcessTasks).ConfigureAwait(false);
             }
 
             if (failed)

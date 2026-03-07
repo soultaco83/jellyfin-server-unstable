@@ -1,0 +1,22 @@
+--- a/MediaBrowser.Controller/Entities/Folder.cs
++++ b/MediaBrowser.Controller/Entities/Folder.cs
+@@ -472,7 +472,7 @@ namespace MediaBrowser.Controller.Entities
+                         currentChildren.Remove(staleItem.Id);
+                         currentChildrenByPath.Remove(child.Path);
+                         staleItem.SetParent(null);
+-                        LibraryManager.DeleteItem(staleItem, new DeleteOptions { DeleteFileLocation = false }, this, false);
++                        await LibraryManager.DeleteItemAsync(staleItem, new DeleteOptions { DeleteFileLocation = false }, this, false, cancellationToken).ConfigureAwait(false);
+                         actuallyRemoved.Add(staleItem);
+                     }
+
+--- a/MediaBrowser.Controller/Entities/Video.cs
++++ b/MediaBrowser.Controller/Entities/Video.cs
+@@ -514,7 +514,7 @@ namespace MediaBrowser.Controller.Entities
+                 if (LibraryManager.GetItemById(id) is Video orphanedVideo && orphanedVideo.OwnerId.Equals(Id))
+                 {
+                     Logger.LogInformation("Owned video file no longer exists, removing orphaned item: {Path}", path);
+-                    LibraryManager.DeleteItem(orphanedVideo, new DeleteOptions { DeleteFileLocation = false });
++                    await LibraryManager.DeleteItemAsync(orphanedVideo, new DeleteOptions { DeleteFileLocation = false }, cancellationToken).ConfigureAwait(false);
+                 }
+
+                 return;

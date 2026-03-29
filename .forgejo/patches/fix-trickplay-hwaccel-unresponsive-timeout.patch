@@ -1,0 +1,37 @@
+diff --git a/MediaBrowser.MediaEncoding/Encoder/MediaEncoder.cs b/MediaBrowser.MediaEncoding/Encoder/MediaEncoder.cs
+index 8f15e5d62..0a1373bf1 100644
+--- a/MediaBrowser.MediaEncoding/Encoder/MediaEncoder.cs
++++ b/MediaBrowser.MediaEncoding/Encoder/MediaEncoder.cs
+@@ -1044,9 +1044,14 @@ namespace MediaBrowser.MediaEncoding.Encoder
+                     // Need to give ffmpeg enough time to make all the thumbnails, which could be a while,
+                     // but we still need to detect if the process hangs.
+                     // Making the assumption that as long as new jpegs are showing up, everything is good.
++                    // Hardware-accelerated encoders (VAAPI, QSV, etc.) may need several timeout periods to
++                    // initialize before producing any output, so we allow multiple consecutive "no progress"
++                    // intervals before declaring the process unresponsive.
+ 
+                     bool isResponsive = true;
+                     int lastCount = 0;
++                    int noProgressCount = 0;
++                    const int MaxNoProgressIterations = 5;
+                     var timeoutMs = _configurationManager.Configuration.ImageExtractionTimeoutMs;
+                     timeoutMs = timeoutMs <= 0 ? DefaultHdrImageExtractionTimeout : timeoutMs;
+ 
+@@ -1066,7 +1071,16 @@ namespace MediaBrowser.MediaEncoding.Encoder
+ 
+                         var jpegCount = _fileSystem.GetFilePaths(targetDirectory).Count();
+ 
+-                        isResponsive = jpegCount > lastCount;
++                        if (jpegCount > lastCount)
++                        {
++                            noProgressCount = 0;
++                        }
++                        else
++                        {
++                            noProgressCount++;
++                        }
++
++                        isResponsive = noProgressCount < MaxNoProgressIterations;
+                         lastCount = jpegCount;
+                     }
+ 

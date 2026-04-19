@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Threading.Tasks;
 using Jellyfin.Api.Extensions;
 using Jellyfin.Api.Helpers;
 using Jellyfin.Api.ModelBinders;
@@ -160,7 +161,7 @@ public class ItemsController : BaseJellyfinApiController
     /// <returns>A <see cref="QueryResult{BaseItemDto}"/> with the items.</returns>
     [HttpGet("Items")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult<QueryResult<BaseItemDto>> GetItems(
+    public async Task<ActionResult<QueryResult<BaseItemDto>>> GetItems(
         [FromQuery] Guid? userId,
         [FromQuery] string? maxOfficialRating,
         [FromQuery] bool? hasThemeSong,
@@ -297,6 +298,21 @@ public class ItemsController : BaseJellyfinApiController
         {
             recursive = true;
             includeItemTypes = new[] { BaseItemKind.Playlist };
+        }
+        else if (folder is ICollectionFolder)
+        {
+            // When the client doesn't specify recursive/includeItemTypes, force the query
+            // through the database path where all filters (IsHD, genres, etc.) are applied.
+            recursive ??= true;
+            if (includeItemTypes.Length == 0)
+            {
+                includeItemTypes = collectionType switch
+                {
+                    CollectionType.boxsets => [BaseItemKind.BoxSet],
+                    null => [BaseItemKind.Movie, BaseItemKind.Series],
+                    _ => []
+                };
+            }
         }
 
         if (item is not UserRootFolder
@@ -501,7 +517,7 @@ public class ItemsController : BaseJellyfinApiController
         return new QueryResult<BaseItemDto>(
             startIndex,
             result.TotalRecordCount,
-            _dtoService.GetBaseItemDtos(result.Items, dtoOptions, user));
+            _dtoService.GetBaseItemDtos(result.Items, dtoOptions, user, skipVisibilityCheck: true));
     }
 
     /// <summary>
@@ -597,7 +613,7 @@ public class ItemsController : BaseJellyfinApiController
     [Obsolete("Kept for backwards compatibility")]
     [ApiExplorerSettings(IgnoreApi = true)]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult<QueryResult<BaseItemDto>> GetItemsByUserIdLegacy(
+    public async Task<ActionResult<QueryResult<BaseItemDto>>> GetItemsByUserIdLegacy(
         [FromRoute] Guid userId,
         [FromQuery] string? maxOfficialRating,
         [FromQuery] bool? hasThemeSong,
@@ -683,7 +699,7 @@ public class ItemsController : BaseJellyfinApiController
         [FromQuery, ModelBinder(typeof(CommaDelimitedCollectionModelBinder))] Guid[] genreIds,
         [FromQuery] bool enableTotalRecordCount = true,
         [FromQuery] bool? enableImages = true)
-        => GetItems(
+        => await GetItems(
             userId,
             maxOfficialRating,
             hasThemeSong,
@@ -769,7 +785,7 @@ public class ItemsController : BaseJellyfinApiController
             studioIds,
             genreIds,
             enableTotalRecordCount,
-            enableImages);
+            enableImages).ConfigureAwait(false);
 
     /// <summary>
     /// Gets items based on a query.

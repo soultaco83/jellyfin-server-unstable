@@ -1,6 +1,35 @@
 <h1 align="center">Jellyfin</h1>
 <h3 align="center">The Free Software Media System</h3>
 
+## Currently Installed PRs
+
+The following PRs are automatically merged into this fork:
+
+- [Upstream PR #12775](https://github.com/jellyfin/jellyfin/pull/12775)
+- [Upstream PR #14935](https://github.com/jellyfin/jellyfin/pull/14935)
+- [Upstream PR #15370](https://github.com/jellyfin/jellyfin/pull/15370)
+- [Upstream PR #15377](https://github.com/jellyfin/jellyfin/pull/15377)
+- [Upstream PR #15490](https://github.com/jellyfin/jellyfin/pull/15490)
+- [Upstream PR #15900](https://github.com/jellyfin/jellyfin/pull/15900)
+- [Upstream PR #15995](https://github.com/jellyfin/jellyfin/pull/15995)
+- [Upstream PR #16062](https://github.com/jellyfin/jellyfin/pull/16062)
+- [Upstream PR #16228](https://github.com/jellyfin/jellyfin/pull/16228)
+- [Upstream PR #16252](https://github.com/jellyfin/jellyfin/pull/16252)
+- [Upstream PR #16312](https://github.com/jellyfin/jellyfin/pull/16312)
+- [Upstream PR #16354](https://github.com/jellyfin/jellyfin/pull/16354)
+- [Upstream PR #16362](https://github.com/jellyfin/jellyfin/pull/16362)
+- [Upstream PR #16376](https://github.com/jellyfin/jellyfin/pull/16376)
+- [Upstream PR #16399](https://github.com/jellyfin/jellyfin/pull/16399)
+- [Upstream PR #16440](https://github.com/jellyfin/jellyfin/pull/16440)
+- [Upstream PR #16475](https://github.com/jellyfin/jellyfin/pull/16475)
+- [Upstream PR #16538](https://github.com/jellyfin/jellyfin/pull/16538)
+- [Upstream PR #16539](https://github.com/jellyfin/jellyfin/pull/16539)
+- [Upstream PR #16552](https://github.com/jellyfin/jellyfin/pull/16552)
+- [Upstream PR #16580](https://github.com/jellyfin/jellyfin/pull/16580)
+- [Upstream PR #16583](https://github.com/jellyfin/jellyfin/pull/16583)
+- [Upstream PR #16649](https://github.com/jellyfin/jellyfin/pull/16649)
+
+---
 ---
 
 <p align="center">

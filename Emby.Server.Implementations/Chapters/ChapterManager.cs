@@ -108,7 +108,7 @@ public class ChapterManager : IChapterManager
             sum += chapters[i].StartPositionTicks - chapters[i - 1].StartPositionTicks;
         }
 
-        return sum / (chapters.Count - 1);
+        return sum / chapters.Count;
     }
 
     /// <inheritdoc />

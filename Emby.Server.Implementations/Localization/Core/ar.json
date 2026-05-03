@@ -126,8 +126,6 @@
     "HearingImpaired": "لضعاف السمع",
     "TaskRefreshTrickplayImages": "إنشاء صور معاينات التنقل (Trickplay)",
     "TaskRefreshTrickplayImagesDescription": "ينشئ صور معاينات التنقل السريع للفيديوهات في المكتبات المفعّلة.",
-    "TaskCleanCollectionsAndPlaylists": "تنظيف المجموعات وقوائم التشغيل",
-    "TaskCleanCollectionsAndPlaylistsDescription": "يزيل العناصر التي لم تعد موجودة من المجموعات وقوائم التشغيل.",
     "TaskAudioNormalization": "تطبيع الصوت",
     "TaskAudioNormalizationDescription": "يفحص الملفات لجمع بيانات تطبيع الصوت.",
     "TaskDownloadMissingLyrics": "تنزيل الكلمات المفقودة",

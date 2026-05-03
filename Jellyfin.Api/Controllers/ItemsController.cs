@@ -31,6 +31,7 @@ namespace Jellyfin.Api.Controllers;
 /// </summary>
 [Route("")]
 [Authorize]
+[Tags("Item")]
 public class ItemsController : BaseJellyfinApiController
 {
     private readonly IUserManager _userManager;

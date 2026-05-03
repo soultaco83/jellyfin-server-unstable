@@ -471,16 +471,13 @@ public sealed partial class BaseItemRepository
                         .Select(g => g.Key)
                     : Enumerable.Empty<Guid>().AsQueryable();
 
-                // BoxSet: played = all children played
-                IEnumerable<Guid> playedBoxSetIds = [];
-                if (hasBoxSet)
-                {
-                    var boxSetIds = baseQuery.Where(e => e.Type == boxSetTypeName).Select(e => e.Id).ToList();
-                    var playedCounts = GetPlayedAndTotalCountBatch(boxSetIds, filter.User!);
-                    playedBoxSetIds = playedCounts
-                        .Where(kvp => kvp.Value.Total > 0 && kvp.Value.Played == kvp.Value.Total)
-                        .Select(kvp => kvp.Key);
-                }
+                // BoxSet: played = all children played.
+                IQueryable<Guid> playedBoxSetIds = hasBoxSet
+                    ? GetFullyPlayedFolderIdsQuery(
+                        context,
+                        baseQuery.Where(e => e.Type == boxSetTypeName).Select(e => e.Id),
+                        filter.User!)
+                    : Enumerable.Empty<Guid>().AsQueryable();
 
                 // Non-folder items: check UserData directly
                 var playedItemIds = context.UserData

@@ -495,53 +495,49 @@ public sealed partial class BaseItemRepository
                                 && (lc.Child.InheritedParentalRatingSubValue ?? 0) <= maxSubScore)))));
     }
 
-    private Dictionary<Guid, (int Played, int Total)> GetPlayedAndTotalCountBatch(IReadOnlyList<Guid> folderIds, User user)
+    /// <inheritdoc />
+    public IQueryable<Guid> GetFullyPlayedFolderIdsQuery(JellyfinDbContext context, IQueryable<Guid> folderIds, User user)
     {
+        ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(folderIds);
         ArgumentNullException.ThrowIfNull(user);
 
-        if (folderIds.Count == 0)
-        {
-            return new Dictionary<Guid, (int Played, int Total)>();
-        }
-
-        using var dbContext = _dbProvider.CreateDbContext();
-        var folderIdsArray = folderIds.ToArray();
         var filter = new InternalItemsQuery(user);
         var userId = user.Id;
 
-        var leafItems = dbContext.BaseItems
+        var leafItems = context.BaseItems
+            .AsNoTracking()
             .Where(b => !b.IsFolder && !b.IsVirtualItem);
-        leafItems = ApplyAccessFiltering(dbContext, leafItems, filter);
+        leafItems = ApplyAccessFiltering(context, leafItems, filter);
 
         var playedLeafItems = leafItems
             .Select(b => new { b.Id, Played = b.UserData!.Any(ud => ud.UserId == userId && ud.Played) });
 
-        var ancestorLeaves = dbContext.AncestorIds
-            .WhereOneOrMany(folderIdsArray, a => a.ParentItemId)
+        var ancestorLeaves = context.AncestorIds
+            .Where(a => folderIds.Contains(a.ParentItemId))
             .Join(
                 playedLeafItems,
                 a => a.ItemId,
                 b => b.Id,
                 (a, b) => new { FolderId = a.ParentItemId, b.Id, b.Played });
 
-        var linkedLeaves = dbContext.LinkedChildren
-            .WhereOneOrMany(folderIdsArray, lc => lc.ParentId)
+        var linkedLeaves = context.LinkedChildren
+            .Where(lc => folderIds.Contains(lc.ParentId))
             .Join(
                 playedLeafItems,
                 lc => lc.ChildId,
                 b => b.Id,
                 (lc, b) => new { FolderId = lc.ParentId, b.Id, b.Played });
 
-        var linkedFolderLeaves = dbContext.LinkedChildren
-            .WhereOneOrMany(folderIdsArray, lc => lc.ParentId)
+        var linkedFolderLeaves = context.LinkedChildren
+            .Where(lc => folderIds.Contains(lc.ParentId))
             .Join(
-                dbContext.BaseItems.Where(b => b.IsFolder),
+                context.BaseItems.Where(b => b.IsFolder),
                 lc => lc.ChildId,
                 b => b.Id,
                 (lc, b) => new { lc.ParentId, FolderChildId = b.Id })
             .Join(
-                dbContext.AncestorIds,
+                context.AncestorIds,
                 x => x.FolderChildId,
                 a => a.ParentItemId,
                 (x, a) => new { x.ParentId, DescendantId = a.ItemId })
@@ -551,18 +547,11 @@ public sealed partial class BaseItemRepository
                 b => b.Id,
                 (x, b) => new { FolderId = x.ParentId, b.Id, b.Played });
 
-        var results = ancestorLeaves
+        return ancestorLeaves
             .Union(linkedLeaves)
             .Union(linkedFolderLeaves)
             .GroupBy(x => x.FolderId)
-            .Select(g => new
-            {
-                FolderId = g.Key,
-                Total = g.Select(x => x.Id).Distinct().Count(),
-                Played = g.Where(x => x.Played).Select(x => x.Id).Distinct().Count()
-            })
-            .ToDictionary(x => x.FolderId, x => (x.Played, x.Total));
-
-        return results;
+            .Where(g => g.Select(x => x.Id).Distinct().Count() == g.Where(x => x.Played).Select(x => x.Id).Distinct().Count())
+            .Select(g => g.Key);
     }
 }

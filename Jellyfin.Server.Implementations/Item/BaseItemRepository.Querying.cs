@@ -81,7 +81,7 @@ public sealed partial class BaseItemRepository
         var hasRandomSort = filter.OrderBy.Any(e => e.OrderBy == ItemSortBy.Random);
         if (hasRandomSort)
         {
-            var orderedIds = dbQuery.Select(e => e.Id).ToList();
+            var orderedIds = dbQuery.AsNoTracking().Select(e => e.Id).ToList();
             if (orderedIds.Count == 0)
             {
                 return Array.Empty<BaseItemDto>();

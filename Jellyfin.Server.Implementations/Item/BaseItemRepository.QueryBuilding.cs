@@ -63,23 +63,29 @@ public sealed partial class BaseItemRepository
     private IQueryable<BaseItemEntity> ApplyGroupingFilter(JellyfinDbContext context, IQueryable<BaseItemEntity> dbQuery, InternalItemsQuery filter)
     {
         // Collapse duplicates sharing a presentation key (e.g. alternate versions) by picking
-        // the min Id per group. Keep the grouped ids as an IQueryable sub-select; materializing
-        // to a List would inline one bound parameter per id and hit SQLite's variable cap.
+        // the min Id per group.
+        //
+        // The grouped IDs are explicitly materialized before being used to filter the outer query.
+        // Relying on an IQueryable sub-select caused EF Core to silently expand the captured
+        // IQueryable into one bound SQL parameter per result row, which crashes SQLite when the
+        // result set is large ("too many SQL variables"). Materializing first and then re-entering
+        // through WhereOneOrMany ensures EF.Parameter / json_each is used — a single array
+        // parameter regardless of how many IDs are returned.
         var enableGroupByPresentationUniqueKey = EnableGroupByPresentationUniqueKey(filter);
         if (enableGroupByPresentationUniqueKey && filter.GroupBySeriesPresentationUniqueKey)
         {
-            var groupedIds = dbQuery.GroupBy(e => new { e.PresentationUniqueKey, e.SeriesPresentationUniqueKey }).Select(e => e.Min(x => x.Id));
-            dbQuery = context.BaseItems.AsNoTracking().Where(e => groupedIds.Contains(e.Id));
+            var groupedIds = dbQuery.GroupBy(e => new { e.PresentationUniqueKey, e.SeriesPresentationUniqueKey }).Select(e => e.Min(x => x.Id)).ToList();
+            dbQuery = context.BaseItems.AsNoTracking().WhereOneOrMany(groupedIds, e => e.Id);
         }
         else if (enableGroupByPresentationUniqueKey)
         {
-            var groupedIds = dbQuery.GroupBy(e => e.PresentationUniqueKey).Select(e => e.Min(x => x.Id));
-            dbQuery = context.BaseItems.AsNoTracking().Where(e => groupedIds.Contains(e.Id));
+            var groupedIds = dbQuery.GroupBy(e => e.PresentationUniqueKey).Select(e => e.Min(x => x.Id)).ToList();
+            dbQuery = context.BaseItems.AsNoTracking().WhereOneOrMany(groupedIds, e => e.Id);
         }
         else if (filter.GroupBySeriesPresentationUniqueKey)
         {
-            var groupedIds = dbQuery.GroupBy(e => e.SeriesPresentationUniqueKey).Select(e => e.Min(x => x.Id));
-            dbQuery = context.BaseItems.AsNoTracking().Where(e => groupedIds.Contains(e.Id));
+            var groupedIds = dbQuery.GroupBy(e => e.SeriesPresentationUniqueKey).Select(e => e.Min(x => x.Id)).ToList();
+            dbQuery = context.BaseItems.AsNoTracking().WhereOneOrMany(groupedIds, e => e.Id);
         }
         else
         {

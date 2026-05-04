@@ -1,0 +1,22 @@
+--- a/Jellyfin.Api/Controllers/DynamicHlsController.cs
++++ b/Jellyfin.Api/Controllers/DynamicHlsController.cs
+@@ -1411,10 +1411,13 @@ private async Task<ActionResult> GetVariantPlaylistInternal(StreamingRequestDto
+             segmentLength = (int)Math.Ceiling(segmentLength * (nearestIntFramerate / fps));
+         }
+
++        // startTimeTicks must not appear in segment URLs: GetDynamicSegment forbids it (>0 throws),
++        // and segment position is already communicated via runtimeTicks.
++        var segmentQueryString = QueryString.Create(
++            Request.Query.Where(q => !q.Key.Equals("startTimeTicks", StringComparison.OrdinalIgnoreCase)));
++
+         var request = new CreateMainPlaylistRequest(
+             mediaSourceId is null ? null : Guid.Parse(mediaSourceId),
+             state.MediaPath,
+             segmentLength,
+             state.RunTimeTicks ?? 0,
+             state.Request.SegmentContainer ?? string.Empty,
+             "hls1/main/",
+-            Request.QueryString.ToString(),
++            segmentQueryString.ToString(),
+             EncodingHelper.IsCopyCodec(state.OutputVideoCodec));
+         var playlist = _dynamicHlsPlaylistGenerator.CreateMainPlaylist(request);

@@ -1,0 +1,22 @@
+--- a/Emby.Server.Implementations/Library/SimilarItems/SimilarItemsManager.cs
++++ b/Emby.Server.Implementations/Library/SimilarItems/SimilarItemsManager.cs
+@@ -434,8 +434,17 @@ public class SimilarItemsManager : ISimilarItemsManager
+
+     private IReadOnlyList<string> GetPeopleNames(IReadOnlyList<BaseItem> items, IReadOnlyList<string> personTypes)
+     {
+-        var itemIds = items.Select(i => i.Id).ToArray();
+-        return _libraryManager.GetPeopleNamesByItems(itemIds, personTypes, limit: 0);
++        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
++        foreach (var item in items)
++        {
++            var query = new InternalPeopleQuery(personTypes, []) { ItemId = item.Id };
++            foreach (var name in _libraryManager.GetPeopleNames(query))
++            {
++                names.Add(name);
++            }
++        }
++
++        return [.. names];
+     }
+
+     private List<(BaseItem Item, float Score)> ResolveRemoteReferences(

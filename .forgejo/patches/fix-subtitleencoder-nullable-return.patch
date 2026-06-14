@@ -1,0 +1,20 @@
+--- a/MediaBrowser.MediaEncoding/Subtitles/SubtitleEncoder.cs
++++ b/MediaBrowser.MediaEncoding/Subtitles/SubtitleEncoder.cs
+@@ -998,7 +998,7 @@ private async Task<SubtitleInfo> GetExtractedSubtitle(
+         {
+             var outputFileExtension = GetExtractableSubtitleFileExtension(subtitleStream);
+             var outputFormat = GetExtractableSubtitleFormat(subtitleStream);
+-            var outputPath = GetSubtitleCachePath(mediaSource, subtitleStream.Index, "." + outputFileExtension);
++            var outputPath = GetSubtitleCachePath(mediaSource, subtitleStream.Index, "." + outputFileExtension)!;
+
+             var info = new SubtitleInfo()
+             {
+@@ -1119,7 +1119,7 @@ private async Task<bool> WaitForFile(string path, CancellationToken cancellationToken)
+             return false;
+         }
+
+-        private string GetSubtitleCachePath(MediaSourceInfo mediaSource, int subtitleStreamIndex, string outputSubtitleExtension)
++        private string? GetSubtitleCachePath(MediaSourceInfo mediaSource, int subtitleStreamIndex, string outputSubtitleExtension)
+         {
+             return _pathManager.GetSubtitlePath(mediaSource.Id, subtitleStreamIndex, outputSubtitleExtension);
+         }

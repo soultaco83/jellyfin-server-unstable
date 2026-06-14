@@ -1,6 +1,29 @@
 <h1 align="center">Jellyfin</h1>
 <h3 align="center">The Free Software Media System</h3>
 
+## Currently Installed PRs
+
+The following PRs are automatically merged into this fork:
+
+- [Upstream PR #14935](https://github.com/jellyfin/jellyfin/pull/14935)
+- [Upstream PR #15900](https://github.com/jellyfin/jellyfin/pull/15900)
+- [Upstream PR #16228](https://github.com/jellyfin/jellyfin/pull/16228)
+- [Upstream PR #16399](https://github.com/jellyfin/jellyfin/pull/16399)
+- [Upstream PR #16724](https://github.com/jellyfin/jellyfin/pull/16724)
+- [Upstream PR #16875](https://github.com/jellyfin/jellyfin/pull/16875)
+- [Upstream PR #16916](https://github.com/jellyfin/jellyfin/pull/16916)
+- [Upstream PR #16928](https://github.com/jellyfin/jellyfin/pull/16928)
+
+### Recently Removed PRs (Last 7 Days)
+
+#### ✅ Merged Upstream
+The following PRs were automatically removed as they have been merged into upstream Jellyfin:
+
+- ~~[Upstream PR #16941](https://github.com/jellyfin/jellyfin/pull/16941)~~ (merged on 2026-06-07)
+- ~~[Upstream PR #16945](https://github.com/jellyfin/jellyfin/pull/16945)~~ (merged on 2026-06-07)
+- ~~[Upstream PR #16121](https://github.com/jellyfin/jellyfin/pull/16121)~~ (merged on 2026-06-08)
+
+---
 ---
 
 <p align="center">

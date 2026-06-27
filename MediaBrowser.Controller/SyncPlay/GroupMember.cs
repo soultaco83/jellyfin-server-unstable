@@ -56,5 +56,10 @@ namespace MediaBrowser.Controller.SyncPlay
         /// </summary>
         /// <value><c>true</c> to ignore member on group wait; <c>false</c> if they're following group playback.</value>
         public bool IgnoreGroupWait { get; set; }
+
+        /// <summary>
+        /// Gets or sets the UTC timestamp when the member started buffering, or null if not buffering.
+        /// </summary>
+        public DateTime? BufferingStarted { get; set; }
     }
 }

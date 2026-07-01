@@ -288,4 +288,10 @@ public class ServerConfiguration : BaseApplicationConfiguration
     /// Gets or sets a value indicating whether old authorization methods are allowed.
     /// </summary>
     public bool EnableLegacyAuthorization { get; set; }
+
+    /// <summary>
+    /// Gets or sets the SyncPlay timing options for tuning group synchronization behavior.
+    /// </summary>
+    /// <value>The SyncPlay options.</value>
+    public SyncPlayOptions SyncPlayOptions { get; set; } = new SyncPlayOptions();
 }

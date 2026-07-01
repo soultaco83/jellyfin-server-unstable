@@ -1,0 +1,26 @@
+name: Build Check
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Reset to Upstream and Merge PRs"]
+    types:
+      - completed
+
+jobs:
+  build:
+    name: dotnet build
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        run: dotnet build Jellyfin.Server --configuration Release -p:DebugSymbols=false -p:DebugType=none --no-self-contained

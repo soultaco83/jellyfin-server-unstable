@@ -1641,7 +1641,7 @@ namespace MediaBrowser.MediaEncoding.Probing
 
             // Credit to MCEBuddy: https://mcebuddy2x.codeplex.com/
             // DateTime is reported along with timezone info (typically Z i.e. UTC hence assume None)
-            if (tags.TryGetValue("WM/MediaOriginalBroadcastDateTime", out var premiereDateString) && DateTime.TryParse(year, null, DateTimeStyles.AdjustToUniversal, out var parsedDate))
+            if (tags.TryGetValue("WM/MediaOriginalBroadcastDateTime", out var premiereDateString) && DateTime.TryParse(year, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var parsedDate))
             {
                 video.PremiereDate = parsedDate;
             }

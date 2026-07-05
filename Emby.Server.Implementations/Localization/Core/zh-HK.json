@@ -78,7 +78,7 @@
     "TaskCleanLogs": "清理日誌資料夾",
     "TaskRefreshLibrary": "掃描媒體櫃",
     "TaskRefreshChapterImagesDescription": "幫有章節嘅影片整返啲章節縮圖。",
-    "TaskRefreshChapterImages": "擷取章節圖片",
+    "TaskRefreshChapterImages": "擷取章節圖像",
     "TaskCleanCacheDescription": "刪走系統已經唔再需要嘅快取檔案。",
     "TaskCleanCache": "清理快取（Cache）資料夾",
     "TasksChannelsCategory": "網路頻道",

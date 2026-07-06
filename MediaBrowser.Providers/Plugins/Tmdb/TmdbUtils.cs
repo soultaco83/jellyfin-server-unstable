@@ -48,6 +48,16 @@ namespace MediaBrowser.Providers.Plugins.Tmdb
             PersonKind.Producer
         };
 
+        /// <summary>
+        /// Writing jobs to keep.
+        /// </summary>
+        private static readonly HashSet<string> WriterJobs = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "writer",
+            "screenplay",
+            "novel"
+        };
+
         [GeneratedRegex(@"[\W_-[·]]+")]
         private static partial Regex NonWordRegex();
 
@@ -82,7 +92,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb
             }
 
             if (string.Equals(crew.Department, "writing", StringComparison.OrdinalIgnoreCase)
-                && (string.Equals(crew.Job, "writer", StringComparison.OrdinalIgnoreCase) || string.Equals(crew.Job, "screenplay", StringComparison.OrdinalIgnoreCase)))
+                && crew.Job is not null && WriterJobs.Contains(crew.Job))
             {
                 return PersonKind.Writer;
             }

@@ -36,7 +36,7 @@ namespace Emby.Server.Implementations.Library
                 _ when attribute.Equals("tmdbid", StringComparison.OrdinalIgnoreCase) => "tmdb",
                 _ when attribute.Equals("tvdbid", StringComparison.OrdinalIgnoreCase) => "tvdb",
                 _ when attribute.Equals("imdbid", StringComparison.OrdinalIgnoreCase) => "imdb",
-                _ => string.Empty
+                _ => ReadOnlySpan<char>.Empty
             };
 
             for (int strIndex = 0, attributeIndex = 0; attributeIndex > -1;)

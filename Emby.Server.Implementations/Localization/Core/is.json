@@ -105,5 +105,6 @@
     "CleanupUserDataTask": "Hreinsun notendagagna",
     "CleanupUserDataTaskDescription": "Hreinsar öll notendagögn (spilunarstöðu, uppáhöld o.s.frv.) um gögn sem hafa ekki verið til staðar í að lámarki 90 daga.",
     "LyricDownloadFailureFromForItem": "Ekki tókst að niðurhala texta frá {0} fyrir {1}",
-    "Original": "Upprunaleg"
+    "Original": "Upprunaleg",
+    "TaskExtractMediaSegmentsDescription": "Sækir myndbúta úr viðbótum þar sem MediaSegment er virkt."
 }

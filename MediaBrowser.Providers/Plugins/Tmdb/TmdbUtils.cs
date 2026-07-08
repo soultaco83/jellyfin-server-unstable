@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
@@ -51,12 +52,12 @@ namespace MediaBrowser.Providers.Plugins.Tmdb
         /// <summary>
         /// Writing jobs to keep.
         /// </summary>
-        private static readonly HashSet<string> WriterJobs = new(StringComparer.OrdinalIgnoreCase)
+        private static readonly FrozenSet<string> _writerJobs = new[]
         {
             "writer",
             "screenplay",
             "novel"
-        };
+        }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         [GeneratedRegex(@"[\W_-[·]]+")]
         private static partial Regex NonWordRegex();
@@ -92,7 +93,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb
             }
 
             if (string.Equals(crew.Department, "writing", StringComparison.OrdinalIgnoreCase)
-                && crew.Job is not null && WriterJobs.Contains(crew.Job))
+                && crew.Job is not null && _writerJobs.Contains(crew.Job))
             {
                 return PersonKind.Writer;
             }

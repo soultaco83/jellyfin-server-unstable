@@ -1385,7 +1385,7 @@ namespace Emby.Server.Implementations.Dto
                     }
                 }
 
-                if (options.PreferEpisodeParentPoster)
+                if (options.GetImageLimit(ImageType.Primary) > 0)
                 {
                     var episodeSeason = episode.Season;
                     var seasonPrimaryTag = episodeSeason is not null

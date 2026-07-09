@@ -11,6 +11,7 @@ using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Controller.Trickplay;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Querying;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -56,20 +57,26 @@ public class DtoServiceTests
     }
 
     [Fact]
-    public void GetBaseItemDto_PreferEpisodeParentPoster_PrefersSeasonPosterOverEpisodeAndSeries()
+    public void GetBaseItemDto_PreferEpisodeParentPoster_AttachesSeasonPosterWithoutDroppingEpisodeImage()
     {
-        var (episode, season, series) = BuildEpisode(seasonHasPoster: true);
-        var options = new DtoOptions(false) { PreferEpisodeParentPoster = true };
+        var (episode, season, _) = BuildEpisode(seasonHasPoster: true);
+        var options = new DtoOptions(false)
+        {
+            PreferEpisodeParentPoster = true,
+            Fields = [ItemFields.PrimaryImageAspectRatio]
+        };
 
         var dto = _dtoService.GetBaseItemDto(episode, options);
 
-        // The episode's own 16:9 primary is dropped in favor of the season's portrait poster.
-        Assert.False(dto.ImageTags is not null && dto.ImageTags.ContainsKey(ImageType.Primary));
-        Assert.Null(dto.SeriesPrimaryImageTag);
+        // The season poster is attached additively; the episode keeps its own primary and 16:9 ratio,
+        // and clients decide per view whether to prefer the parent/series poster over the episode still.
+        Assert.NotNull(dto.ImageTags);
+        Assert.True(dto.ImageTags.ContainsKey(ImageType.Primary));
+        Assert.NotNull(dto.SeriesPrimaryImageTag);
         Assert.Equal(season.Id, dto.ParentPrimaryImageItemId);
         Assert.Equal("tag:" + season.GetImageInfo(ImageType.Primary, 0)!.Path, dto.ParentPrimaryImageTag);
-        // Aspect ratio follows the (portrait) poster, not the episode's 16:9 image.
-        Assert.Equal(season.GetDefaultPrimaryImageAspectRatio(), dto.PrimaryImageAspectRatio);
+        // Aspect ratio stays the episode's own image, not the poster's.
+        Assert.Equal(episode.GetDefaultPrimaryImageAspectRatio(), dto.PrimaryImageAspectRatio);
     }
 
     [Fact]
@@ -80,8 +87,10 @@ public class DtoServiceTests
 
         var dto = _dtoService.GetBaseItemDto(episode, options);
 
-        Assert.False(dto.ImageTags is not null && dto.ImageTags.ContainsKey(ImageType.Primary));
-        Assert.Null(dto.SeriesPrimaryImageTag);
+        // Episode image is retained; ParentPrimaryImage falls back to the series poster.
+        Assert.NotNull(dto.ImageTags);
+        Assert.True(dto.ImageTags.ContainsKey(ImageType.Primary));
+        Assert.NotNull(dto.SeriesPrimaryImageTag);
         Assert.Equal(series.Id, dto.ParentPrimaryImageItemId);
         Assert.Equal("tag:" + series.GetImageInfo(ImageType.Primary, 0)!.Path, dto.ParentPrimaryImageTag);
     }

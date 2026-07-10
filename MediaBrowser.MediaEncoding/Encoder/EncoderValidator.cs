@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.Versioning;
+using System.Text;
 using System.Text.RegularExpressions;
 using MediaBrowser.Controller.MediaEncoding;
 using Microsoft.Extensions.Logging;
@@ -645,7 +646,9 @@ namespace MediaBrowser.MediaEncoding.Encoder
                     WindowStyle = ProcessWindowStyle.Hidden,
                     ErrorDialog = false,
                     RedirectStandardInput = redirectStandardIn,
+                    StandardOutputEncoding = Encoding.UTF8,
                     RedirectStandardOutput = true,
+                    StandardErrorEncoding = Encoding.UTF8,
                     RedirectStandardError = true
                 }
             })

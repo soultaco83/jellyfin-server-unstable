@@ -616,6 +616,12 @@ namespace Jellyfin.Server.Implementations.Users
                                 .SetProperty(f => f.LastActivityDate, date)
                                 .SetProperty(f => f.LastLoginDate, date))
                             .ConfigureAwait(false);
+
+                        // ExecuteUpdateAsync bypasses the change tracker, so keep the
+                        // returned entity in sync. Otherwise SessionManager.LogSessionActivity
+                        // saves this (stale) entity in full and reverts LastLoginDate.
+                        user.LastActivityDate = date;
+                        user.LastLoginDate = date;
                     }
 
                     await dbContext.Users

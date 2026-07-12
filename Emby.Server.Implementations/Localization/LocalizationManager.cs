@@ -514,7 +514,7 @@ namespace Emby.Server.Implementations.Localization
         /// <param name="ratingValue">Rating value to parse.</param>
         /// <param name="score">Parsed score.</param>
         /// <returns>Returns true if parsing was successful.</returns>
-        private static bool TryParseRatingAsScore(string ratingValue, out int score)
+        private static bool TryParseRatingAsScore(ReadOnlySpan<char> ratingValue, out int score)
         {
             var trimmed = ratingValue.TrimEnd('+');
             return int.TryParse(trimmed, out score);

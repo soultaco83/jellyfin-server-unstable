@@ -167,7 +167,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
         {
             if (fileInfo.Protocol == MediaProtocol.Http)
             {
-                var result = await DetectCharset(fileInfo.Path, fileInfo.Protocol, cancellationToken).ConfigureAwait(false);
+                var result = await DetectCharset(fileInfo.Path, cancellationToken).ConfigureAwait(false);
                 var detected = result.Detected;
 
                 if (detected is not null)
@@ -1104,7 +1104,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                 }
             }
 
-            var result = await DetectCharset(path, mediaSource.Protocol, cancellationToken).ConfigureAwait(false);
+            var result = await DetectCharset(path, cancellationToken).ConfigureAwait(false);
             var charset = result.Detected?.EncodingName ?? string.Empty;
 
             // UTF16 is automatically converted to UTF8 by FFmpeg, do not specify a character encoding
@@ -1120,8 +1120,9 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             return charset;
         }
 
-        private async Task<DetectionResult> DetectCharset(string path, MediaProtocol protocol, CancellationToken cancellationToken)
+        private async Task<DetectionResult> DetectCharset(string path, CancellationToken cancellationToken)
         {
+            var protocol = _mediaSourceManager.GetPathProtocol(path);
             switch (protocol)
             {
                 case MediaProtocol.Http:
@@ -1141,7 +1142,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
                     }
 
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(protocol), protocol, "Unsupported protocol");
+                    throw new NotSupportedException($"Unsupported protocol: {protocol}");
             }
         }
 

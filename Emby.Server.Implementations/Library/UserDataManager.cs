@@ -192,7 +192,8 @@ namespace Emby.Server.Implementations.Library
                 }
                 else
                 {
-                    var userData = item.UserData?.Where(e => e.UserId.Equals(user.Id)).Select(Map).FirstOrDefault();
+                    var userDataRow = ResolveUserDataRow(item, item.UserData?.Where(e => e.UserId.Equals(user.Id)));
+                    var userData = userDataRow is not null ? Map(userDataRow) : null;
                     if (userData is not null)
                     {
                         result[item.Id] = userData;
@@ -356,10 +357,38 @@ namespace Emby.Server.Implementations.Library
         /// <inheritdoc />
         public UserItemData? GetUserData(User user, BaseItem item)
         {
-            return item.UserData?.Where(e => e.UserId.Equals(user.Id)).Select(Map).FirstOrDefault() ?? new UserItemData()
+            var row = ResolveUserDataRow(item, item.UserData?.Where(e => e.UserId.Equals(user.Id)));
+            return row is not null ? Map(row) : new UserItemData()
             {
                 Key = item.GetUserDataKeys()[0],
             };
+        }
+
+        /// <summary>
+        /// Picks the row matching the item's current user data keys, in key order, so rows left behind
+        /// under keys from older metadata don't take priority over the rows the write path updates.
+        /// </summary>
+        /// <param name="item">The item whose keys to match.</param>
+        /// <param name="rows">The candidate user data rows for a single user.</param>
+        /// <returns>The best matching row, or <c>null</c> when there are none.</returns>
+        private static UserData? ResolveUserDataRow(BaseItem item, IEnumerable<UserData>? rows)
+        {
+            var candidates = rows?.ToList();
+            if (candidates is null || candidates.Count == 0)
+            {
+                return null;
+            }
+
+            foreach (var key in item.GetUserDataKeys())
+            {
+                var match = candidates.Find(e => string.Equals(e.CustomDataKey, key, StringComparison.Ordinal));
+                if (match is not null)
+                {
+                    return match;
+                }
+            }
+
+            return candidates[0];
         }
 
         /// <inheritdoc />

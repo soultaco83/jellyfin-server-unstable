@@ -180,8 +180,9 @@ public class FilterController : BaseJellyfinApiController
 
         if ((recursive ?? true) || parentItem is UserView || parentItem is ICollectionFolder)
         {
-            genreQuery.AncestorIds = parentItem is null ? Array.Empty<Guid>() : new[] { parentItem.Id };
-            streamLanguageQuery.AncestorIds = parentItem is null ? Array.Empty<Guid>() : new[] { parentItem.Id };
+            var ancestorIds = parentItem is null ? Array.Empty<Guid>() : new[] { parentItem.Id };
+            genreQuery.AncestorIds = ancestorIds;
+            streamLanguageQuery.AncestorIds = ancestorIds;
         }
         else
         {

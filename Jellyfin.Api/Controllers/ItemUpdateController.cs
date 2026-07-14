@@ -297,6 +297,8 @@ public class ItemUpdateController : BaseJellyfinApiController
         {
             foreach (var season in rseries.Children.OfType<Season>())
             {
+                season.SeriesName = rseries.Name;
+
                 if (!season.LockedFields.Contains(MetadataField.OfficialRating))
                 {
                     season.OfficialRating = request.OfficialRating;
@@ -314,6 +316,8 @@ public class ItemUpdateController : BaseJellyfinApiController
 
                 foreach (var ep in season.Children.OfType<Episode>())
                 {
+                    ep.SeriesName = rseries.Name;
+
                     if (!ep.LockedFields.Contains(MetadataField.OfficialRating))
                     {
                         ep.OfficialRating = request.OfficialRating;

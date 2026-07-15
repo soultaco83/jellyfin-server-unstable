@@ -631,6 +631,7 @@ namespace Jellyfin.Server.Implementations.Users
                     if (maxInvalidLogins.HasValue && user.InvalidLoginAttemptCount >= maxInvalidLogins)
                     {
                         user.SetPermission(PermissionKind.IsDisabled, true);
+                        dbContext.Update(user);
                         await dbContext.SaveChangesAsync()
                             .ConfigureAwait(false);
                         await _eventManager.PublishAsync(new UserLockedOutEventArgs(user)).ConfigureAwait(false);

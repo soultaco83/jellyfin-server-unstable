@@ -279,6 +279,11 @@ public class ItemUpdateController : BaseJellyfinApiController
             item.DateCreated = NormalizeDateTime(request.DateCreated.Value);
         }
 
+        if (request.SeriesName is not null && item is IHasSeries hasSeries)
+        {
+            hasSeries.SeriesName = request.SeriesName;
+        }
+
         item.EndDate = request.EndDate.HasValue ? NormalizeDateTime(request.EndDate.Value) : null;
         item.PremiereDate = request.PremiereDate.HasValue ? NormalizeDateTime(request.PremiereDate.Value) : null;
         item.ProductionYear = request.ProductionYear;

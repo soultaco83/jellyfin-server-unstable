@@ -3,33 +3,66 @@ using System.Collections.Generic;
 using Emby.Server.Implementations.Library;
 using Jellyfin.Database.Implementations;
 using Jellyfin.Database.Implementations.Entities;
+using Jellyfin.Database.Implementations.Locking;
+using Jellyfin.Database.Providers.Sqlite;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Model.Configuration;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 using AudioBook = MediaBrowser.Controller.Entities.AudioBook;
 
 namespace Jellyfin.Server.Implementations.Tests.Library;
 
-public class UserDataManagerTests
+public sealed class UserDataManagerTests : IDisposable
 {
+    private readonly SqliteConnection _connection;
+    private readonly DbContextOptions<JellyfinDbContext> _dbOptions;
     private readonly UserDataManager _userDataManager;
     private readonly User _user;
 
     public UserDataManagerTests()
     {
+        _connection = new SqliteConnection("Data Source=:memory:");
+        _connection.Open();
+
+        _dbOptions = new DbContextOptionsBuilder<JellyfinDbContext>()
+            .UseSqlite(_connection)
+            .Options;
+
+        using (var ctx = CreateDbContext())
+        {
+            ctx.Database.EnsureCreated();
+        }
+
+        var factory = new Mock<IDbContextFactory<JellyfinDbContext>>();
+        factory.Setup(f => f.CreateDbContext()).Returns(CreateDbContext);
+
         var config = new Mock<IServerConfigurationManager>();
         config.SetupGet(c => c.Configuration).Returns(new ServerConfiguration());
 
-        var repository = Mock.Of<IDbContextFactory<JellyfinDbContext>>();
-
-        _userDataManager = new UserDataManager(config.Object, repository);
+        _userDataManager = new UserDataManager(config.Object, factory.Object);
         _user = new User("user", "auth-provider", "reset-provider")
         {
             Id = Guid.NewGuid()
         };
+    }
+
+    public void Dispose()
+    {
+        _connection.Dispose();
+    }
+
+    private JellyfinDbContext CreateDbContext()
+    {
+        return new JellyfinDbContext(
+            _dbOptions,
+            NullLogger<JellyfinDbContext>.Instance,
+            new SqliteDatabaseProvider(null!, NullLogger<SqliteDatabaseProvider>.Instance),
+            new NoLockBehavior(NullLogger<NoLockBehavior>.Instance));
     }
 
     private AudioBook CreateAudioBook()
@@ -145,5 +178,32 @@ public class UserDataManagerTests
 
         Assert.NotNull(userData);
         Assert.Equal(222, userData.PlaybackPositionTicks);
+    }
+
+    [Fact]
+    public void GetUserDataBatch_DatabaseFallback_ResolvesRowsByKeyOrder()
+    {
+        // no preloaded navigation data, so the batch takes the database fallback
+        var fossilItem = CreateAudioBook();
+        var retiredItem = CreateAudioBook();
+
+        using (var ctx = CreateDbContext())
+        {
+            ctx.Users.Add(_user);
+            ctx.BaseItems.Add(new BaseItemEntity { Id = fossilItem.Id, Type = typeof(AudioBook).FullName! });
+            ctx.BaseItems.Add(new BaseItemEntity { Id = retiredItem.Id, Type = typeof(AudioBook).FullName! });
+
+            // the stale id-key row is inserted first so selection by row order would return it
+            ctx.UserData.AddRange(
+                CreateUserDataRow(fossilItem, fossilItem.GetUserDataKeys()[1], 111),
+                CreateUserDataRow(fossilItem, fossilItem.GetUserDataKeys()[0], 222),
+                CreateUserDataRow(retiredItem, "Author-Old Album-0001Old File Name", 333));
+            ctx.SaveChanges();
+        }
+
+        var result = _userDataManager.GetUserDataBatch([fossilItem, retiredItem], _user);
+
+        Assert.Equal(222, result[fossilItem.Id].PlaybackPositionTicks);
+        Assert.Equal(333, result[retiredItem.Id].PlaybackPositionTicks);
     }
 }

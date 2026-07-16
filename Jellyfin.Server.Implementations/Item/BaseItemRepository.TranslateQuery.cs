@@ -557,8 +557,13 @@ public sealed partial class BaseItemRepository
                     : baseQuery.Where(e => inProgressIds.Contains(e.Id));
 
                 // When several versions of the same item are in progress, keep only the most recently played one, use id as tiebreaker.
+                // Only in-progress siblings can eliminate a candidate: a version without progress has a NULL max LastPlayedDate,
+                // which is never greater and never ties. Restricting the sibling scan to the in-progress set keeps this bounded by
+                // the user's Continue Watching count instead of forcing a full BaseItems scan (COALESCE keys are non-indexable) per row.
                 baseQuery = baseQuery.Where(e => e.Type == seriesTypeName || !context.BaseItems
-                    .Where(s => s.Id != e.Id && (s.PrimaryVersionId ?? s.Id) == (e.PrimaryVersionId ?? e.Id))
+                    .Where(s => s.Id != e.Id
+                        && inProgressIds.Contains(s.Id)
+                        && (s.PrimaryVersionId ?? s.Id) == (e.PrimaryVersionId ?? e.Id))
                     .Any(s =>
                         inProgress.Where(su => su.ItemId == s.Id).Max(su => su.LastPlayedDate)
                             > inProgress.Where(eu => eu.ItemId == e.Id).Max(eu => eu.LastPlayedDate)

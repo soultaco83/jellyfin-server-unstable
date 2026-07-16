@@ -291,8 +291,8 @@ namespace Emby.Server.Implementations.Library
             {
                 using var dbContext = _repository.CreateDbContext();
                 withLocalAlternates = dbContext.LinkedChildren
-                    .Where(lc => lc.ChildType == Jellyfin.Database.Implementations.Entities.LinkedChildType.LocalAlternateVersion
-                        && localProbeIds.Contains(lc.ParentId))
+                    .Where(lc => lc.ChildType == Jellyfin.Database.Implementations.Entities.LinkedChildType.LocalAlternateVersion)
+                    .WhereOneOrMany(localProbeIds, lc => lc.ParentId)
                     .Select(lc => lc.ParentId)
                     .Distinct()
                     .ToHashSet();

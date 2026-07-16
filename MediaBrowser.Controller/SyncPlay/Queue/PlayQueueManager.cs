@@ -297,14 +297,9 @@ namespace MediaBrowser.Controller.SyncPlay.Queue
             var removedBeforePlayingItem = 0;
             if (playingItem is not null)
             {
-                var playlist = GetPlaylistInternal();
-                for (var index = 0; index < PlayingItemIndex; index++)
-                {
-                    if (playlistItemIds.Contains(playlist[index].PlaylistItemId))
-                    {
-                        removedBeforePlayingItem++;
-                    }
-                }
+                removedBeforePlayingItem = GetPlaylistInternal()
+                    .Take(PlayingItemIndex)
+                    .Count(item => playlistItemIds.Contains(item.PlaylistItemId));
             }
 
             _sortedPlaylist.RemoveAll(item => playlistItemIds.Contains(item.PlaylistItemId));

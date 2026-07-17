@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Jellyfin.Api.Attributes;
+using Jellyfin.Extensions;
 using Jellyfin.Extensions.Json;
 using MediaBrowser.Common.Api;
 using MediaBrowser.Common.Plugins;
@@ -228,8 +229,8 @@ public class PluginsController : BaseJellyfinApiController
 
         if (!string.IsNullOrEmpty(plugin.Manifest.ImagePath))
         {
-            var imagePath = Path.Combine(plugin.Path, plugin.Manifest.ImagePath);
-            if (!System.IO.File.Exists(imagePath))
+            var imagePath = Path.GetFullPath(Path.Combine(plugin.Path, plugin.Manifest.ImagePath));
+            if (!PathHelper.IsContainedIn(plugin.Path, imagePath) || !System.IO.File.Exists(imagePath))
             {
                 return NotFound();
             }

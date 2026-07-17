@@ -5,6 +5,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Jellyfin.Api.Attributes;
 using Jellyfin.Api.Helpers;
+using Jellyfin.Extensions;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.MediaEncoding;
@@ -63,8 +64,7 @@ public class HlsSegmentController : BaseJellyfinApiController
         var file = string.Concat(segmentId, Path.GetExtension(Request.Path.Value.AsSpan()));
         var transcodePath = _serverConfigurationManager.GetTranscodePath();
         file = Path.GetFullPath(Path.Combine(transcodePath, file));
-        var fileDir = Path.GetDirectoryName(file);
-        if (string.IsNullOrEmpty(fileDir) || !fileDir.StartsWith(transcodePath, StringComparison.InvariantCulture))
+        if (!PathHelper.IsContainedIn(transcodePath, file))
         {
             return BadRequest("Invalid segment.");
         }
@@ -89,8 +89,7 @@ public class HlsSegmentController : BaseJellyfinApiController
         var file = string.Concat(playlistId, Path.GetExtension(Request.Path.Value.AsSpan()));
         var transcodePath = _serverConfigurationManager.GetTranscodePath();
         file = Path.GetFullPath(Path.Combine(transcodePath, file));
-        var fileDir = Path.GetDirectoryName(file);
-        if (string.IsNullOrEmpty(fileDir) || !fileDir.StartsWith(transcodePath, StringComparison.InvariantCulture)
+        if (!PathHelper.IsContainedIn(transcodePath, file)
             || Path.GetExtension(file.AsSpan()).Equals(".m3u8", StringComparison.OrdinalIgnoreCase))
         {
             return BadRequest("Invalid segment.");
@@ -144,8 +143,7 @@ public class HlsSegmentController : BaseJellyfinApiController
         var transcodeFolderPath = _serverConfigurationManager.GetTranscodePath();
 
         file = Path.GetFullPath(Path.Combine(transcodeFolderPath, file));
-        var fileDir = Path.GetDirectoryName(file);
-        if (string.IsNullOrEmpty(fileDir) || !fileDir.StartsWith(transcodeFolderPath, StringComparison.InvariantCulture))
+        if (!PathHelper.IsContainedIn(transcodeFolderPath, file))
         {
             return BadRequest("Invalid segment.");
         }

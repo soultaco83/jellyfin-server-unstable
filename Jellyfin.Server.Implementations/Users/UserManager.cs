@@ -893,7 +893,7 @@ namespace Jellyfin.Server.Implementations.Users
 
         internal static void ThrowIfInvalidUsername(string name)
         {
-            if (!string.IsNullOrWhiteSpace(name) && ValidUsernameRegex().IsMatch(name))
+            if (!string.IsNullOrWhiteSpace(name) && ValidUsernameRegex().IsMatch(name) && name != "." && name != "..")
             {
                 return;
             }

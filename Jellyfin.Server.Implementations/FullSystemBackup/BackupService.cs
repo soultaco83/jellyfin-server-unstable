@@ -374,7 +374,7 @@ public class BackupService : IBackupService
                                             }
                                             catch (Exception ex)
                                             {
-                                                _logger.LogWarning(ex, "Could not read next entity of type {Table}, the underlying data appears to be corrupt. Skipping this row and continuing backup; the affected database row should be inspected and fixed manually", entityType.SourceName);
+                                                _logger.LogError(ex, "Could not read next entity of type {Table}, the underlying data appears to be corrupt. Skipping this row and continuing backup; the affected database row should be inspected and fixed manually", entityType.SourceName);
                                                 continue;
                                             }
 

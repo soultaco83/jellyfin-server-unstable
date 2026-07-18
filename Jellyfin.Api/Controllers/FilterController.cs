@@ -161,7 +161,7 @@ public class FilterController : BaseJellyfinApiController
         var streamLanguageQuery = new InternalItemsQuery(user)
         {
             // It's possible that different langauges are only available on alternative versions.
-            // To fetch them all, owned items are inlcluded.
+            // To fetch them all, owned items are included.
             IncludeOwnedItems = true,
             IncludeItemTypes = includeItemTypes,
             DtoOptions = new DtoOptions
@@ -194,7 +194,7 @@ public class FilterController : BaseJellyfinApiController
             && !includeItemTypes.Contains(BaseItemKind.Episode))
         {
             // streams are joined on epsiodes not shows or seasons
-            streamLanguageQuery.IncludeItemTypes = [..includeItemTypes, BaseItemKind.Episode];
+            streamLanguageQuery.IncludeItemTypes = [.. includeItemTypes, BaseItemKind.Episode];
         }
 
         if (includeItemTypes.Length == 1

@@ -45,5 +45,6 @@
     "TaskCleanLogsDescription": "Strikar gerðalistafílur eldri enn {0} dagar.",
     "TaskUpdatePlugins": "Dagfør ískoytisforrit",
     "TaskRefreshChannels": "Endurinnles rásir",
-    "TaskDownloadMissingLyricsDescription": "Niðurtekur sangtekstir"
+    "TaskDownloadMissingLyricsDescription": "Niðurtekur sangtekstir",
+    "Movies": "Filmar"
 }

@@ -889,8 +889,20 @@ namespace Jellyfin.Server.Implementations.Users
                 var dbContext = await _dbProvider.CreateDbContextAsync().ConfigureAwait(false);
                 await using (dbContext.ConfigureAwait(false))
                 {
-                    dbContext.Remove(user.ProfileImage);
-                    await dbContext.SaveChangesAsync().ConfigureAwait(false);
+                    // Remove the tracked profile image loaded from the database instead of the
+                    // detached instance on the passed in user. That instance can carry a stale,
+                    // never-persisted (temporary) key, which makes EF Core throw when it is marked
+                    // for deletion, leaving the profile image impossible to clear or replace.
+                    var dbUser = await UserQuery(dbContext)
+                        .AsTracking()
+                        .FirstOrDefaultAsync(u => u.Id == user.Id)
+                        .ConfigureAwait(false);
+                    if (dbUser?.ProfileImage is not null)
+                    {
+                        dbContext.Remove(dbUser.ProfileImage);
+                        dbUser.ProfileImage = null;
+                        await dbContext.SaveChangesAsync().ConfigureAwait(false);
+                    }
                 }
 
                 user.ProfileImage = null;

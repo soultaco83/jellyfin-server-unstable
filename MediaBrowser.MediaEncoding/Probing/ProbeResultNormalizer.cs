@@ -732,9 +732,7 @@ namespace MediaBrowser.MediaEncoding.Probing
                 stream.LocalizedOriginal = _localization.GetLocalizedString("Original");
                 if (!string.IsNullOrEmpty(stream.Language))
                 {
-                    stream.LocalizedLanguage = _localization.FindLanguageInfo(stream.Language)?.DisplayName is { } name
-                        ? name.Split([';', ','])[0].Trim()
-                        : null;
+                    stream.LocalizedLanguage = _localization.GetLanguageDisplayName(stream.Language);
                 }
 
                 stream.Channels = streamInfo.Channels;
@@ -776,9 +774,7 @@ namespace MediaBrowser.MediaEncoding.Probing
                 stream.LocalizedHearingImpaired = _localization.GetLocalizedString("HearingImpaired");
                 if (!string.IsNullOrEmpty(stream.Language))
                 {
-                    stream.LocalizedLanguage = _localization.FindLanguageInfo(stream.Language)?.DisplayName is { } name
-                        ? name.Split([';', ','])[0].Trim()
-                        : null;
+                    stream.LocalizedLanguage = _localization.GetLanguageDisplayName(stream.Language);
                 }
 
                 if (string.IsNullOrEmpty(stream.Title))

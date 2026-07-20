@@ -262,6 +262,24 @@ namespace Emby.Server.Implementations.Localization
         }
 
         /// <inheritdoc />
+        public string? GetLanguageDisplayName(string language)
+        {
+            if (string.IsNullOrEmpty(language))
+            {
+                return null;
+            }
+
+            var displayName = FindLanguageInfo(language)?.DisplayName;
+            if (displayName is null)
+            {
+                return null;
+            }
+
+            // Truncate at the first delimiter to avoid cluttered display names
+            return displayName.Split([';', ','], StringSplitOptions.None)[0].Trim();
+        }
+
+        /// <inheritdoc />
         public IReadOnlyList<CountryInfo> GetCountries()
         {
             using var stream = _assembly.GetManifestResourceStream(CountriesPath) ?? throw new InvalidOperationException($"Invalid resource path: '{CountriesPath}'");

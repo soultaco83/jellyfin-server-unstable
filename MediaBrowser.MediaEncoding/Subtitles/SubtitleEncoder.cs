@@ -73,7 +73,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             _serverConfigurationManager = serverConfigurationManager;
         }
 
-        private MemoryStream ConvertSubtitles(
+        internal MemoryStream ConvertSubtitles(
             Stream stream,
             SubtitleInfo inputInfo,
             string outputFormat,
@@ -81,7 +81,7 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             long endTimeTicks,
             bool preserveOriginalTimestamps)
         {
-            var subtitle = Subtitle.Parse(stream, Path.GetExtension(inputInfo.Path));
+            var subtitle = _subtitleParser.Parse(stream, inputInfo.Format);
 
             FilterEvents(subtitle, startTimeTicks, endTimeTicks, preserveOriginalTimestamps);
 

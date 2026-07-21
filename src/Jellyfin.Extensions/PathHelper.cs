@@ -33,7 +33,7 @@ public static class PathHelper
         }
 
         var leaf = Path.GetFileName(fileName);
-        if (string.IsNullOrEmpty(leaf) || leaf == "." || leaf == "..")
+        if (string.IsNullOrEmpty(leaf) || string.Equals(leaf, ".", StringComparison.Ordinal) || string.Equals(leaf, "..", StringComparison.Ordinal))
         {
             return null;
         }

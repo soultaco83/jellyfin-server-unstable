@@ -102,7 +102,7 @@ namespace MediaBrowser.MediaEncoding.Attachments
             CancellationToken cancellationToken)
         {
             var shouldExtractOneByOne = mediaSource.MediaAttachments.Any(a => !string.IsNullOrEmpty(a.FileName)
-                                                                              && PathHelper.GetSafeLeafFileName(a.FileName) != a.FileName);
+                                                                              && !string.Equals(PathHelper.GetSafeLeafFileName(a.FileName), a.FileName, StringComparison.Ordinal));
             if (shouldExtractOneByOne && !inputFile.EndsWith(".mks", StringComparison.OrdinalIgnoreCase))
             {
                 await ExtractAllAttachmentsIndividuallyInternal(

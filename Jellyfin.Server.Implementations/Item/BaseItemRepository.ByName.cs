@@ -87,11 +87,6 @@ public sealed partial class BaseItemRepository
     {
         ArgumentNullException.ThrowIfNull(filter);
 
-        if (!filter.Limit.HasValue)
-        {
-            filter.EnableTotalRecordCount = false;
-        }
-
         using var context = _dbProvider.CreateDbContext();
 
         return TranslateQuery(

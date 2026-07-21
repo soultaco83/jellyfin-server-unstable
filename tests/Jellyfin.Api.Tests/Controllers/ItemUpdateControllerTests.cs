@@ -1,5 +1,4 @@
 using System;
-using System.Reflection;
 using System.Threading.Tasks;
 using Jellyfin.Api.Controllers;
 using MediaBrowser.Controller.Configuration;
@@ -73,15 +72,6 @@ public class ItemUpdateControllerTests
 
     private Task InvokeUpdateItem(BaseItemDto request, BaseItem item)
     {
-        var method = typeof(ItemUpdateController).GetMethod(
-            "UpdateItem",
-            BindingFlags.NonPublic | BindingFlags.Instance,
-            null,
-            new[] { typeof(BaseItemDto), typeof(BaseItem) },
-            null);
-
-        Assert.NotNull(method);
-
-        return (Task)method!.Invoke(_subject, new object[] { request, item })!;
+        return _subject.UpdateItem(request, item);
     }
 }

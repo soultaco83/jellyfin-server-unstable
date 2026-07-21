@@ -236,7 +236,7 @@ public class ItemUpdateController : BaseJellyfinApiController
         return NoContent();
     }
 
-    private async Task UpdateItem(BaseItemDto request, BaseItem item)
+    internal async Task UpdateItem(BaseItemDto request, BaseItem item)
     {
         item.Name = request.Name;
         item.ForcedSortName = request.ForcedSortName;

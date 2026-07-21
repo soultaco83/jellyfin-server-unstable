@@ -50,7 +50,11 @@ public sealed class BackupServiceTests : IDisposable
             ctx.Database.EnsureCreated();
         }
 
-        _testRoot = Path.Combine(Path.GetTempPath(), "jellyfin-backup-service-tests-" + Guid.NewGuid().ToString("N"));
+        // Use the test assembly's own output directory instead of Path.GetTempPath(). On GitHub-hosted
+        // windows-latest runners, the system temp directory lives on the constrained C: drive, which can have
+        // less than the 5GiB BackupService requires free, causing spurious failures. AppContext.BaseDirectory
+        // is under the repo checkout (the much larger D: drive on Windows runners) on all platforms.
+        _testRoot = Path.Combine(AppContext.BaseDirectory, "jellyfin-backup-service-tests-" + Guid.NewGuid().ToString("N"));
         _backupPath = Path.Combine(_testRoot, "Backup");
         _configurationDirectoryPath = Path.Combine(_testRoot, "Config");
         Directory.CreateDirectory(_backupPath);

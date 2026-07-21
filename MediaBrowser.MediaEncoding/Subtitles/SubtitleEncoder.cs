@@ -163,28 +163,36 @@ namespace MediaBrowser.MediaEncoding.Subtitles
             return (stream, fileInfo);
         }
 
-        private async Task<Stream> GetSubtitleStream(SubtitleInfo fileInfo, CancellationToken cancellationToken)
+        internal async Task<Stream> GetSubtitleStream(SubtitleInfo fileInfo, CancellationToken cancellationToken)
         {
-            if (fileInfo.Protocol == MediaProtocol.Http)
+            if (fileInfo.IsExternal && MediaStream.IsTextFormat(fileInfo.Format))
             {
                 var result = await DetectCharset(fileInfo.Path, cancellationToken).ConfigureAwait(false);
                 var detected = result.Detected;
 
-                if (detected is not null)
-                {
-                    _logger.LogDebug("charset {CharSet} detected for {Path}", detected.EncodingName, fileInfo.Path);
-
-                    using var stream = await _httpClientFactory.CreateClient(NamedClient.Default)
+                var stream = fileInfo.Protocol == MediaProtocol.Http
+                    ? await _httpClientFactory.CreateClient(NamedClient.Default)
                         .GetStreamAsync(new Uri(fileInfo.Path), cancellationToken)
-                        .ConfigureAwait(false);
+                        .ConfigureAwait(false)
+                    : AsyncFile.OpenRead(fileInfo.Path);
 
-                    await using (stream.ConfigureAwait(false))
-                    {
-                        using var reader = new StreamReader(stream, detected.Encoding);
-                        var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+                // Short-circuit when the file is already UTF-8/ASCII.
+                if (detected is null
+                    || string.Equals(detected.EncodingName, "utf-8", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(detected.EncodingName, "ascii", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(detected.EncodingName, "us-ascii", StringComparison.OrdinalIgnoreCase))
+                {
+                    return stream;
+                }
 
-                        return new MemoryStream(Encoding.UTF8.GetBytes(text));
-                    }
+                _logger.LogDebug("charset {CharSet} detected for {Path}", detected.EncodingName, fileInfo.Path);
+
+                await using (stream.ConfigureAwait(false))
+                {
+                    using var reader = new StreamReader(stream, detected.Encoding);
+                    var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+
+                    return new MemoryStream(Encoding.UTF8.GetBytes(text));
                 }
             }
 

@@ -1123,7 +1123,7 @@ namespace MediaBrowser.Providers.Manager
             {
                 if (replaceData || !target.RunTimeTicks.HasValue)
                 {
-                    if (target is not Audio && target is not Video)
+                    if (target is not Audio && target is not Video && target is not Book)
                     {
                         target.RunTimeTicks = source.RunTimeTicks;
                     }

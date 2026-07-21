@@ -1089,6 +1089,7 @@ public sealed partial class BaseItemRepository
         {
             var includeTags = filter.IncludeInheritedTags.Select(e => e.GetCleanValue()).ToArray();
             var isPlaylistOnlyQuery = includeTypes.Length == 1 && includeTypes.FirstOrDefault() == BaseItemKind.Playlist;
+            var personTypeName = _itemTypeLookup.BaseItemKindNames[BaseItemKind.Person];
             var allowedTagItemIds = context.ItemValuesMap
                 .Where(f => f.ItemValue.Type == ItemValueType.Tags && includeTags.Contains(f.ItemValue.CleanValue))
                 .Select(f => f.ItemId);
@@ -1098,6 +1099,9 @@ public sealed partial class BaseItemRepository
                 || (e.SeriesId.HasValue && allowedTagItemIds.Contains(e.SeriesId.Value))
                 || e.Parents!.Any(p => allowedTagItemIds.Contains(p.ParentItemId))
                 || (e.TopParentId.HasValue && allowedTagItemIds.Contains(e.TopParentId.Value))
+
+                // People don't carry the tags of the media they appear in and would never match
+                || e.Type == personTypeName
 
                 // A playlist should be accessible to its owner regardless of allowed tags
                 || (isPlaylistOnlyQuery && e.Data!.Contains($"OwnerUserId\":\"{filter.User!.Id:N}\"")));

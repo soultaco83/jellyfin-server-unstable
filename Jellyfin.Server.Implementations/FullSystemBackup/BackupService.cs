@@ -364,9 +364,6 @@ public class BackupService : IBackupService
                                     {
                                         while (true)
                                         {
-                                            // Reading the next row can itself throw, e.g. when a column contains malformed
-                                            // JSON (see https://github.com/jellyfin/jellyfin/issues/17216). Catch that here so a single
-                                            // corrupt row is skipped, logged for manual follow-up, and does not abort the whole backup.
                                             bool hasNext;
                                             try
                                             {

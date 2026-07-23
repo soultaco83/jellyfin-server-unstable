@@ -95,9 +95,9 @@ public static class OrderMapper
             // Exact match on CleanName or OriginalTitle
             (e.CleanName == cleanSearchTerm || (e.OriginalTitle != null && e.OriginalTitle.ToLower() == originalSearchLower)) ? 0 :
             // Prefix match with word boundary
-            (e.CleanName!.StartsWith(searchPrefix) || (e.OriginalTitle != null && e.OriginalTitle.ToLower().StartsWith(originalSearchPrefix))) ? 1 :
+            ((e.CleanName != null && e.CleanName.StartsWith(searchPrefix)) || (e.OriginalTitle != null && e.OriginalTitle.ToLower().StartsWith(originalSearchPrefix))) ? 1 :
             // Prefix match
-            (e.CleanName!.StartsWith(cleanSearchTerm) || (e.OriginalTitle != null && e.OriginalTitle.ToLower().StartsWith(originalSearchLower))) ? 2 : 3;
+            ((e.CleanName != null && e.CleanName.StartsWith(cleanSearchTerm)) || (e.OriginalTitle != null && e.OriginalTitle.ToLower().StartsWith(originalSearchLower))) ? 2 : 3;
     }
 
     private static string GetCleanValue(string value)

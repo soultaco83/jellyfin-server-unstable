@@ -34,6 +34,12 @@ namespace MediaBrowser.Controller.SyncPlay
         long MaxPlaybackOffset { get; }
 
         /// <summary>
+        /// Gets the maximum time a member can be buffering before being auto-ignored, in milliseconds.
+        /// </summary>
+        /// <value>The buffering timeout, in milliseconds.</value>
+        long BufferingTimeoutMs { get; }
+
+        /// <summary>
         /// Gets the group identifier.
         /// </summary>
         /// <value>The group identifier.</value>

@@ -1,0 +1,173 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Soultaco83 <soulnacho@gmail.com>
+Date: Sun, 22 Jun 2026 22:00:00 -0500
+Subject: [PATCH] Make SyncPlay timing parameters configurable via
+ server configuration
+
+SyncPlay's DefaultPing (500ms), MaxPlaybackOffset (500ms), and other
+timing parameters are hardcoded in Group.cs. These values are tuned for
+LAN/low-latency connections and cause constant re-syncing, pauses, and
+buffering issues with high-latency connections (e.g., trans-pacific
+USA->Australia with ~250ms RTT + jitter).
+
+This patch:
+- Adds SyncPlayOptions configuration class with default values matching
+  the original hardcoded values (backward compatible).
+- Adds SyncPlayOptions property to ServerConfiguration so it's stored
+  in system.xml and editable via the dashboard.
+- Inject IServerConfigurationManager into SyncPlayManager and pass
+  options to Group constructor.
+- Group reads DefaultPing, MaxPlaybackOffset, TimeSyncOffset, and
+  BufferingTimeoutMs from the options instead of hardcoded values.
+
+To tune for high-latency connections, edit system.xml:
+  <SyncPlayOptions>
+    <DefaultPing>1000</DefaultPing>
+    <MaxPlaybackOffset>2000</MaxPlaybackOffset>
+    <TimeSyncOffset>2000</TimeSyncOffset>
+    <BufferingTimeoutMs>30000</BufferingTimeoutMs>
+  </SyncPlayOptions>
+
+diff --git a/Emby.Server.Implementations/SyncPlay/Group.cs b/Emby.Server.Implementations/SyncPlay/Group.cs
+index f2ccaba82c..6e0ff590de 100644
+--- a/Emby.Server.Implementations/SyncPlay/Group.cs
++++ b/Emby.Server.Implementations/SyncPlay/Group.cs
+@@ -69,11 +69,13 @@ namespace Emby.Server.Implementations.SyncPlay
+         /// <param name="userManager">The user manager.</param>
+         /// <param name="sessionManager">The session manager.</param>
+         /// <param name="libraryManager">The library manager.</param>
++        /// <param name="syncPlayOptions">The SyncPlay timing options.</param>
+         public Group(
+             ILoggerFactory loggerFactory,
+             IUserManager userManager,
+             ISessionManager sessionManager,
+-            ILibraryManager libraryManager)
++            ILibraryManager libraryManager,
++            MediaBrowser.Model.Configuration.SyncPlayOptions syncPlayOptions)
+         {
+             _loggerFactory = loggerFactory;
+             _userManager = userManager;
+@@ -81,6 +83,11 @@ namespace Emby.Server.Implementations.SyncPlay
+             _libraryManager = libraryManager;
+             _logger = loggerFactory.CreateLogger<Group>();
+
++            DefaultPing = syncPlayOptions.DefaultPing;
++            MaxPlaybackOffset = syncPlayOptions.MaxPlaybackOffset;
++            TimeSyncOffset = syncPlayOptions.TimeSyncOffset;
++            BufferingTimeoutMs = syncPlayOptions.BufferingTimeoutMs;
++
+             _state = new IdleGroupState(loggerFactory);
+         }
+
+diff --git a/Emby.Server.Implementations/SyncPlay/SyncPlayManager.cs b/Emby.Server.Implementations/SyncPlay/SyncPlayManager.cs
+index b45d754554..b6ff1444eb 100644
+--- a/Emby.Server.Implementations/SyncPlay/SyncPlayManager.cs
++++ b/Emby.Server.Implementations/SyncPlay/SyncPlayManager.cs
+@@ -4,6 +4,7 @@ using System;
+ using System.Collections.Concurrent;
+ using System.Collections.Generic;
+ using System.Threading;
++using MediaBrowser.Controller.Configuration;
+ using MediaBrowser.Controller.Library;
+ using MediaBrowser.Controller.Session;
+ using MediaBrowser.Controller.SyncPlay;
+@@ -43,6 +44,11 @@ namespace Emby.Server.Implementations.SyncPlay
+         /// </summary>
+         private readonly ILibraryManager _libraryManager;
+
++        /// <summary>
++        /// The SyncPlay timing options.
++        /// </summary>
++        private readonly MediaBrowser.Model.Configuration.SyncPlayOptions _syncPlayOptions;
++
+         /// <summary>
+         /// The map between users and counter of active sessions.
+         /// </summary>
+@@ -78,16 +84,19 @@ namespace Emby.Server.Implementations.SyncPlay
+         /// <param name="userManager">The user manager.</param>
+         /// <param name="sessionManager">The session manager.</param>
+         /// <param name="libraryManager">The library manager.</param>
++        /// <param name="serverConfigurationManager">The server configuration manager.</param>
+         public SyncPlayManager(
+             ILoggerFactory loggerFactory,
+             IUserManager userManager,
+             ISessionManager sessionManager,
+-            ILibraryManager libraryManager)
++            ILibraryManager libraryManager,
++            IServerConfigurationManager serverConfigurationManager)
+         {
+             _loggerFactory = loggerFactory;
+             _userManager = userManager;
+             _sessionManager = sessionManager;
+             _libraryManager = libraryManager;
++            _syncPlayOptions = serverConfigurationManager.Configuration.SyncPlayOptions;
+             _logger = loggerFactory.CreateLogger<SyncPlayManager>();
+             _sessionManager.SessionEnded += OnSessionEnded;
+         }
+@@ -122,7 +131,7 @@ namespace Emby.Server.Implementations.SyncPlay
+                     LeaveGroup(session, leaveGroupRequest, cancellationToken);
+                 }
+
+-                var group = new Group(_loggerFactory, _userManager, _sessionManager, _libraryManager);
++                var group = new Group(_loggerFactory, _userManager, _sessionManager, _libraryManager, _syncPlayOptions);
+                 _groups[group.GroupId] = group;
+
+                 if (!_sessionToGroupMap.TryAdd(session.Id, group))
+diff --git a/MediaBrowser.Model/Configuration/ServerConfiguration.cs b/MediaBrowser.Model/Configuration/ServerConfiguration.cs
+index ac5c12304e..9bf8895062 100644
+--- a/MediaBrowser.Model/Configuration/ServerConfiguration.cs
++++ b/MediaBrowser.Model/Configuration/ServerConfiguration.cs
+@@ -288,4 +288,10 @@ public class ServerConfiguration : BaseApplicationConfiguration
+     /// Gets or sets a value indicating whether old authorization methods are allowed.
+     /// </summary>
+     public bool EnableLegacyAuthorization { get; set; }
++
++    /// <summary>
++    /// Gets or sets the SyncPlay timing options for tuning group synchronization behavior.
++    /// </summary>
++    /// <value>The SyncPlay options.</value>
++    public SyncPlayOptions SyncPlayOptions { get; set; } = new SyncPlayOptions();
+ }
+diff --git a/MediaBrowser.Model/Configuration/SyncPlayOptions.cs b/MediaBrowser.Model/Configuration/SyncPlayOptions.cs
+new file mode 100644
+index 0000000000..12ced499df
+--- /dev/null
++++ b/MediaBrowser.Model/Configuration/SyncPlayOptions.cs
+@@ -0,0 +1,37 @@
++#pragma warning disable CS1591
++
++namespace MediaBrowser.Model.Configuration;
++
++/// <summary>
++/// Represents the SyncPlay timing options for tuning group synchronization behavior.
++/// </summary>
++public class SyncPlayOptions
++{
++    /// <summary>
++    /// Gets or sets the default ping value used for new sessions, in milliseconds.
++    /// Increase for high-latency connections (e.g., trans-pacific 300ms+ RTT needs ~1000ms).
++    /// </summary>
++    /// <value>The default ping value in milliseconds.</value>
++    public long DefaultPing { get; set; } = 500;
++
++    /// <summary>
++    /// Gets or sets the maximum offset error accepted for position reported by clients, in milliseconds.
++    /// With trans-Pacific connections (~250ms RTT + jitter), position reports can differ
++    /// by more than 500ms, causing constant re-syncs. Increase to 2000ms for such scenarios.
++    /// </summary>
++    /// <value>The maximum playback offset in milliseconds.</value>
++    public long MaxPlaybackOffset { get; set; } = 500;
++
++    /// <summary>
++    /// Gets or sets the maximum time a member can be buffering before being auto-ignored, in milliseconds.
++    /// After this timeout, the buffering member will be ignored and the group can resume playback.
++    /// </summary>
++    /// <value>The buffering timeout in milliseconds.</value>
++    public long BufferingTimeoutMs { get; set; } = 30000;
++
++    /// <summary>
++    /// Gets or sets the maximum time offset error accepted for dates reported by clients, in milliseconds.
++    /// </summary>
++    /// <value>The time sync offset in milliseconds.</value>
++    public long TimeSyncOffset { get; set; } = 2000;
++}

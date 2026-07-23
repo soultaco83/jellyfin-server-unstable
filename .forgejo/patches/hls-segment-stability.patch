@@ -1,0 +1,74 @@
+diff --git a/Jellyfin.Api/Controllers/DynamicHlsController.cs b/Jellyfin.Api/Controllers/DynamicHlsController.cs
+index 4bdb59b446..c6dffe015e 100644
+--- a/Jellyfin.Api/Controllers/DynamicHlsController.cs
++++ b/Jellyfin.Api/Controllers/DynamicHlsController.cs
+@@ -1589,6 +1589,12 @@ public class DynamicHlsController : BaseJellyfinApiController
+         var inputModifier = _encodingHelper.GetInputModifier(state, _encodingOptions, segmentContainer);
+         var hlsArguments = $"-hls_playlist_type {(isEventPlaylist ? "event" : "vod")} -hls_list_size 0";
+
++        // Add discontinuity and temp_file flags to prevent buffer stalled / bufferSeekOverHole errors
++        // - discont_start: adds EXT-X-DISCONTINUITY when timestamp gaps exist between segments
++        // - temp_file: writes segments atomically so hls.js never reads partial files
++        hlsArguments += " -hls_flags discont_start+temp_file";
++
++
+         if (string.Equals(segmentContainer, "ts", StringComparison.OrdinalIgnoreCase))
+         {
+             segmentFormat = "mpegts";
+@@ -1610,6 +1616,11 @@ public class DynamicHlsController : BaseJellyfinApiController
+             {
+                 // fMP4 needs this flag to write the audio packet DTS/PTS including the initial delay into MOOF::TRAF::TFDT
+                 hlsArguments += $" {(useLegacySegmentOption ? "-hls_ts_options" : "-hls_segment_options")} movflags=+frag_discont";
++
++                // For fMP4, also add negative_cts_offsets to ensure consistent timestamp handling
++                // when segments are restarted at different positions
++                hlsArguments += $" {(useLegacySegmentOption ? "-hls_ts_options" : "-hls_segment_options")} movflags=+negative_cts_offsets";
++
+             }
+
+             segmentFormat = "fmp4" + outputFmp4HeaderArg;
+@@ -1620,6 +1631,14 @@ public class DynamicHlsController : BaseJellyfinApiController
+             segmentFormat = "mpegts";
+         }
+
++        // When transcoding restarts from a seeked position (segment gap), ffmpeg requires keyframes
++        // aligned with segment boundaries to produce smooth playback after a restart.
++        if (!isEventPlaylist && startNumber > 0)
++        {
++            hlsArguments += " -force_key_frames expr:gte(t,n_forced*" + state.SegmentLength.ToString(CultureInfo.InvariantCulture) + ")";
++        }
++
++
+         var maxMuxingQueueSize = _encodingOptions.MaxMuxingQueueSize > 128
+             ? _encodingOptions.MaxMuxingQueueSize.ToString(CultureInfo.InvariantCulture)
+             : "128";
+@@ -1979,7 +1998,7 @@ public class DynamicHlsController : BaseJellyfinApiController
+         else
+         {
+             _logger.LogWarning("cannot serve {0} as it doesn't exist and no transcode is running", segmentPath);
++            return NotFound();
+         }
+-
+-        return GetSegmentResult(state, segmentPath, transcodingJob);
+     }
+
+     private ActionResult GetSegmentResult(StreamState state, string segmentPath, TranscodingJob? transcodingJob)
+@@ -2001,7 +2020,17 @@ public class DynamicHlsController : BaseJellyfinApiController
+             return Task.CompletedTask;
+         });
+
+-        return FileStreamResponseHelpers.GetStaticFileResult(segmentPath, MimeTypes.GetMimeType(segmentPath));
++        // Verify segment exists on disk before serving to avoid 500 errors
++        // that manifest as bufferStalledError in the client.
++        if (System.IO.File.Exists(segmentPath))
++        {
++            return FileStreamResponseHelpers.GetStaticFileResult(segmentPath, MimeTypes.GetMimeType(segmentPath));
++        }
++
++        _logger.LogWarning(
++            "Segment file {SegmentPath} was expected but not found on disk. Transcode may have failed.",
++            segmentPath);
++        return NotFound();
+     }
+
+     private int? GetCurrentTranscodingIndex(string playlist, string segmentExtension)

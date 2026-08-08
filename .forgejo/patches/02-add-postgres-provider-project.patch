@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..cc01e4cedc
 --- /dev/null
 +++ b/src/Jellyfin.Database/Jellyfin.Database.Providers.Postgres/Jellyfin.Database.Providers.Postgres.csproj
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,32 @@
 +<Project Sdk="Microsoft.NET.Sdk">
 +
 +  <PropertyGroup>
@@ -30,6 +30,8 @@ index 0000000000..cc01e4cedc
 +  </ItemGroup>
 +
 +  <ItemGroup>
++    <ProjectReference Include="..\..\..\MediaBrowser.Common\MediaBrowser.Common.csproj" />
++    <ProjectReference Include="..\..\..\MediaBrowser.Controller\MediaBrowser.Controller.csproj" />
 +    <ProjectReference Include="..\Jellyfin.Database.Implementations\Jellyfin.Database.Implementations.csproj" />
 +  </ItemGroup>
 +
@@ -10128,7 +10130,7 @@ new file mode 100644
 index 0000000000..d128fd953b
 --- /dev/null
 +++ b/src/Jellyfin.Database/Jellyfin.Database.Providers.Postgres/PostgresDesignTimeJellyfinDbFactory.cs
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,36 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Diagnostics;
@@ -10136,9 +10138,7 @@ index 0000000000..d128fd953b
 +using System.Threading;
 +using System.Threading.Tasks;
 +using Jellyfin.Database.Implementations;
-+using Jellyfin.Database.Implementations.DbConfiguration;
 +using Jellyfin.Database.Implementations.Locking;
-+using Jellyfin.Server.Implementations;
 +using MediaBrowser.Common.Configuration;
 +using Microsoft.EntityFrameworkCore;
 +using Microsoft.EntityFrameworkCore.Design;

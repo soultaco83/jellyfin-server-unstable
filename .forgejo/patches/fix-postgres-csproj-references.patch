@@ -1,0 +1,11 @@
+diff --git a/src/Jellyfin.Database/Jellyfin.Database.Providers.Postgres/Jellyfin.Database.Providers.Postgres.csproj b/src/Jellyfin.Database/Jellyfin.Database.Providers.Postgres/Jellyfin.Database.Providers.Postgres.csproj
+index cc01e4cedc..a1b2c3d4e5 100644
+--- a/src/Jellyfin.Database/Jellyfin.Database.Providers.Postgres/Jellyfin.Database.Providers.Postgres.csproj
++++ b/src/Jellyfin.Database/Jellyfin.Database.Providers.Postgres/Jellyfin.Database.Providers.Postgres.csproj
+@@ -10,6 +10,7 @@
+
+   <ItemGroup>
+     <ProjectReference Include="..\..\..\MediaBrowser.Common\MediaBrowser.Common.csproj" />
++    <ProjectReference Include="..\..\..\MediaBrowser.Controller\MediaBrowser.Controller.csproj" />
+     <ProjectReference Include="..\Jellyfin.Database.Implementations\Jellyfin.Database.Implementations.csproj" />
+   </ItemGroup>

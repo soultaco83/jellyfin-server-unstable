@@ -6,6 +6,7 @@ using System.Reflection;
 using Jellyfin.Database.Implementations;
 using Jellyfin.Database.Implementations.DbConfiguration;
 using Jellyfin.Database.Implementations.Locking;
+using Jellyfin.Database.Providers.Postgres;
 using Jellyfin.Database.Providers.Sqlite;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Configuration;
@@ -24,6 +25,7 @@ public static class ServiceCollectionExtensions
     private static IEnumerable<Type> DatabaseProviderTypes()
     {
         yield return typeof(SqliteDatabaseProvider);
+        yield return typeof(PostgresDatabaseProvider);
     }
 
     private static IDictionary<string, JellyfinDbProviderFactory> GetSupportedDbProviders()
@@ -80,6 +82,27 @@ public static class ServiceCollectionExtensions
     {
         var efCoreConfiguration = configurationManager.GetConfiguration<DatabaseConfigurationOptions>("database");
         JellyfinDbProviderFactory? providerFactory = null;
+
+        // Allow enabling Postgres via JELLYFIN_POSTGRES_ENABLED=true
+        if (bool.TryParse(Environment.GetEnvironmentVariable("JELLYFIN_POSTGRES_ENABLED"), out var postgresEnabled) && postgresEnabled)
+        {
+            efCoreConfiguration = new DatabaseConfigurationOptions()
+            {
+                DatabaseType = "Jellyfin-Postgres",
+                LockingBehavior = DatabaseLockingBehaviorTypes.NoLock
+            };
+        }
+
+        // Or override database type explicitly via JELLYFIN_DATABASE_TYPE
+        var envDatabaseType = Environment.GetEnvironmentVariable("JELLYFIN_DATABASE_TYPE");
+        if (!string.IsNullOrWhiteSpace(envDatabaseType))
+        {
+            efCoreConfiguration = new DatabaseConfigurationOptions()
+            {
+                DatabaseType = envDatabaseType,
+                LockingBehavior = DatabaseLockingBehaviorTypes.NoLock
+            };
+        }
 
         if (efCoreConfiguration?.DatabaseType is null)
         {

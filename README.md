@@ -1,6 +1,49 @@
 <h1 align="center">Jellyfin</h1>
 <h3 align="center">The Free Software Media System</h3>
 
+## Currently Installed PRs
+
+The following PRs are automatically merged into this fork:
+
+- [Upstream PR #12011](https://github.com/jellyfin/jellyfin/pull/12011)
+- [Upstream PR #15900](https://github.com/jellyfin/jellyfin/pull/15900)
+- [Upstream PR #16228](https://github.com/jellyfin/jellyfin/pull/16228)
+- [Upstream PR #16399](https://github.com/jellyfin/jellyfin/pull/16399)
+- [Upstream PR #16724](https://github.com/jellyfin/jellyfin/pull/16724)
+- [Upstream PR #16875](https://github.com/jellyfin/jellyfin/pull/16875)
+- [Upstream PR #16916](https://github.com/jellyfin/jellyfin/pull/16916)
+- [Upstream PR #16928](https://github.com/jellyfin/jellyfin/pull/16928)
+- [Upstream PR #17132](https://github.com/jellyfin/jellyfin/pull/17132)
+- [Upstream PR #17258](https://github.com/jellyfin/jellyfin/pull/17258)
+- [Upstream PR #17299](https://github.com/jellyfin/jellyfin/pull/17299)
+- [Upstream PR #17309](https://github.com/jellyfin/jellyfin/pull/17309)
+- [Upstream PR #17420](https://github.com/jellyfin/jellyfin/pull/17420)
+- [Upstream PR #17496](https://github.com/jellyfin/jellyfin/pull/17496)
+- [Upstream PR #17509](https://github.com/jellyfin/jellyfin/pull/17509)
+- [Upstream PR #17522](https://github.com/jellyfin/jellyfin/pull/17522)
+- [Upstream PR #17511](https://github.com/jellyfin/jellyfin/pull/17511)
+
+### Recently Removed PRs (Last 7 Days)
+
+#### ✅ Merged Upstream
+The following PRs were automatically removed as they have been merged into upstream Jellyfin:
+
+- ~~[Upstream PR #17416](https://github.com/jellyfin/jellyfin/pull/17416)~~ (merged on 2026-08-01)
+- ~~[Upstream PR #17460](https://github.com/jellyfin/jellyfin/pull/17460)~~ (merged on 2026-08-01)
+- ~~[Upstream PR #17463](https://github.com/jellyfin/jellyfin/pull/17463)~~ (merged on 2026-08-01)
+- ~~[Upstream PR #17147](https://github.com/jellyfin/jellyfin/pull/17147)~~ (merged on 2026-08-02)
+- ~~[Upstream PR #17466](https://github.com/jellyfin/jellyfin/pull/17466)~~ (merged on 2026-08-06)
+- ~~[Upstream PR #17523](https://github.com/jellyfin/jellyfin/pull/17523)~~ (merged on 2026-08-06)
+- ~~[Upstream PR #17528](https://github.com/jellyfin/jellyfin/pull/17528)~~ (merged on 2026-08-06)
+- ~~[Upstream PR #17521](https://github.com/jellyfin/jellyfin/pull/17521)~~ (merged on 2026-08-08)
+
+#### ❌ Closed Without Merging
+The following PRs were automatically removed as they were closed without being merged:
+
+- ~~[Upstream PR #17440](https://github.com/jellyfin/jellyfin/pull/17440)~~ (closed on 2026-08-02)
+- ~~[Upstream PR #17531](https://github.com/jellyfin/jellyfin/pull/17531)~~ (closed on 2026-08-06)
+
+---
 ---
 
 <p align="center">

@@ -1,0 +1,12 @@
+--- a/Jellyfin.Api/Controllers/DashboardController.cs
++++ b/Jellyfin.Api/Controllers/DashboardController.cs
+@@ -60,7 +60,7 @@
+             configPages = configPages.Where(p => p.EnableInMainMenu == enableInMainMenu.Value);
+         }
+
+-        return configPages;
++        return Ok(configPages);
+     }
+
+     /// <summary>
+     /// Gets a dashboard configuration page.

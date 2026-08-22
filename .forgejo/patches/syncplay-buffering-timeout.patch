@@ -1,0 +1,110 @@
+diff --git a/Emby.Server.Implementations/SyncPlay/Group.cs b/Emby.Server.Implementations/SyncPlay/Group.cs
+index 38a0018a70..f2ccaba82c 100644
+--- a/Emby.Server.Implementations/SyncPlay/Group.cs
++++ b/Emby.Server.Implementations/SyncPlay/Group.cs
+@@ -102,6 +102,13 @@ namespace Emby.Server.Implementations.SyncPlay
+         /// <value>The maximum offset error.</value>
+         public long MaxPlaybackOffset { get; } = 500;
+ 
++        /// <summary>
++        /// Gets the maximum time a member can be buffering before being auto-ignored, in milliseconds.
++        /// After this timeout, the buffering member will be ignored and the group can resume playback.
++        /// </summary>
++        /// <value>The buffering timeout, in milliseconds.</value>
++        public long BufferingTimeoutMs { get; } = 30000;
++
+         /// <summary>
+         /// Gets the group identifier.
+         /// </summary>
+@@ -460,30 +467,56 @@ namespace Emby.Server.Implementations.SyncPlay
+             if (_participants.TryGetValue(session.Id, out GroupMember value))
+             {
+                 value.IsBuffering = isBuffering;
++                value.BufferingStarted = isBuffering ? DateTime.UtcNow : null;
+             }
+         }
+ 
+         /// <inheritdoc />
+         public void SetAllBuffering(bool isBuffering)
+         {
++            var now = DateTime.UtcNow;
+             foreach (var session in _participants.Values)
+             {
+                 session.IsBuffering = isBuffering;
++                session.BufferingStarted = isBuffering ? now : null;
+             }
+         }
+ 
+         /// <inheritdoc />
+         public bool IsBuffering()
+         {
++            var now = DateTime.UtcNow;
++            var hasBufferingMember = false;
++
+             foreach (var session in _participants.Values)
+             {
+-                if (session.IsBuffering && !session.IgnoreGroupWait)
++                if (!session.IsBuffering || session.IgnoreGroupWait)
+                 {
+-                    return true;
++                    continue;
+                 }
++
++                // Check if this member has been buffering for too long.
++                if (session.BufferingStarted.HasValue)
++                {
++                    var bufferingDuration = (now - session.BufferingStarted.Value).TotalMilliseconds;
++                    if (bufferingDuration > BufferingTimeoutMs)
++                    {
++                        _logger.LogWarning(
++                            "Member {SessionId} ({UserName}) has been buffering for {DurationMs:F0}ms, exceeding timeout of {TimeoutMs}ms. Auto-ignoring to allow group playback to resume.",
++                            session.SessionId,
++                            session.UserName,
++                            bufferingDuration,
++                            BufferingTimeoutMs);
++
++                        session.IgnoreGroupWait = true;
++                        continue;
++                    }
++                }
++
++                hasBufferingMember = true;
+             }
+ 
+-            return false;
++            return hasBufferingMember;
+         }
+ 
+         /// <inheritdoc />
+diff --git a/MediaBrowser.Controller/SyncPlay/GroupMember.cs b/MediaBrowser.Controller/SyncPlay/GroupMember.cs
+index b973672c40..6cb8da05b6 100644
+--- a/MediaBrowser.Controller/SyncPlay/GroupMember.cs
++++ b/MediaBrowser.Controller/SyncPlay/GroupMember.cs
+@@ -56,5 +56,10 @@ namespace MediaBrowser.Controller.SyncPlay
+         /// </summary>
+         /// <value><c>true</c> to ignore member on group wait; <c>false</c> if they're following group playback.</value>
+         public bool IgnoreGroupWait { get; set; }
++
++        /// <summary>
++        /// Gets or sets the UTC timestamp when the member started buffering, or null if not buffering.
++        /// </summary>
++        public DateTime? BufferingStarted { get; set; }
+     }
+ }
+diff --git a/MediaBrowser.Controller/SyncPlay/IGroupStateContext.cs b/MediaBrowser.Controller/SyncPlay/IGroupStateContext.cs
+index ddf86be71f..fb1d1eed79 100644
+--- a/MediaBrowser.Controller/SyncPlay/IGroupStateContext.cs
++++ b/MediaBrowser.Controller/SyncPlay/IGroupStateContext.cs
+@@ -33,6 +33,12 @@ namespace MediaBrowser.Controller.SyncPlay
+         /// <value>The maximum offset error accepted, in milliseconds.</value>
+         long MaxPlaybackOffset { get; }
+ 
++        /// <summary>
++        /// Gets the maximum time a member can be buffering before being auto-ignored, in milliseconds.
++        /// </summary>
++        /// <value>The buffering timeout, in milliseconds.</value>
++        long BufferingTimeoutMs { get; }
++
+         /// <summary>
+         /// Gets the group identifier.
+         /// </summary>

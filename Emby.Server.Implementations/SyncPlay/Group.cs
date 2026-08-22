@@ -128,6 +128,13 @@ namespace Emby.Server.Implementations.SyncPlay
         public long MaxPlaybackOffset { get; } = 500;
 
         /// <summary>
+        /// Gets the maximum time a member can be buffering before being auto-ignored, in milliseconds.
+        /// After this timeout, the buffering member will be ignored and the group can resume playback.
+        /// </summary>
+        /// <value>The buffering timeout, in milliseconds.</value>
+        public long BufferingTimeoutMs { get; } = 30000;
+
+        /// <summary>
         /// Gets the group identifier.
         /// </summary>
         /// <value>The group identifier.</value>
@@ -528,30 +535,56 @@ namespace Emby.Server.Implementations.SyncPlay
             if (_participants.TryGetValue(session.Id, out GroupMember value))
             {
                 value.IsBuffering = isBuffering;
+                value.BufferingStarted = isBuffering ? DateTime.UtcNow : null;
             }
         }
 
         /// <inheritdoc />
         public void SetAllBuffering(bool isBuffering)
         {
+            var now = DateTime.UtcNow;
             foreach (var session in _participants.Values)
             {
                 session.IsBuffering = isBuffering;
+                session.BufferingStarted = isBuffering ? now : null;
             }
         }
 
         /// <inheritdoc />
         public bool IsBuffering()
         {
+            var now = DateTime.UtcNow;
+            var hasBufferingMember = false;
+
             foreach (var session in _participants.Values)
             {
-                if (session.IsBuffering && !session.IgnoreGroupWait)
+                if (!session.IsBuffering || session.IgnoreGroupWait)
                 {
-                    return true;
+                    continue;
                 }
+
+                // Check if this member has been buffering for too long.
+                if (session.BufferingStarted.HasValue)
+                {
+                    var bufferingDuration = (now - session.BufferingStarted.Value).TotalMilliseconds;
+                    if (bufferingDuration > BufferingTimeoutMs)
+                    {
+                        _logger.LogWarning(
+                            "Member {SessionId} ({UserName}) has been buffering for {DurationMs:F0}ms, exceeding timeout of {TimeoutMs}ms. Auto-ignoring to allow group playback to resume.",
+                            session.SessionId,
+                            session.UserName,
+                            bufferingDuration,
+                            BufferingTimeoutMs);
+
+                        session.IgnoreGroupWait = true;
+                        continue;
+                    }
+                }
+
+                hasBufferingMember = true;
             }
 
-            return false;
+            return hasBufferingMember;
         }
 
         /// <inheritdoc />

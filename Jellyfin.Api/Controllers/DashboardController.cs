@@ -60,7 +60,7 @@ public class DashboardController : BaseJellyfinApiController
             configPages = configPages.Where(p => p.EnableInMainMenu == enableInMainMenu.Value);
         }
 
-        return configPages;
+        return Ok(configPages);
     }
 
     /// <summary>

@@ -482,7 +482,8 @@ namespace MediaBrowser.Controller.SyncPlay.GroupStates
                 {
                     // If all ready, then start playback.
                     // Let other clients resume as soon as the buffering client catches up.
-                    if (delayTicks > context.GetHighestPing() * 2 * TimeSpan.TicksPerMillisecond)
+                    var highestPing = context.GetHighestPing();
+                    if (delayTicks > highestPing * 2 * TimeSpan.TicksPerMillisecond)
                     {
                         // Client that was buffering is recovering, notifying others to resume.
                         context.LastActivity = currentTime.AddTicks(delayTicks);
@@ -495,20 +496,20 @@ namespace MediaBrowser.Controller.SyncPlay.GroupStates
 
                         context.SendCommand(session, filter, command, cancellationToken);
 
-                        _logger.LogInformation("Session {SessionId} is recovering, group {GroupId} will resume in {Delay} seconds.", session.Id, context.GroupId.ToString(), TimeSpan.FromTicks(delayTicks).TotalSeconds);
+                        _logger.LogInformation("Session {SessionId} is recovering, group {GroupId} will resume in {Delay} seconds (highest ping {HighestPing}ms).", session.Id, context.GroupId.ToString(), TimeSpan.FromTicks(delayTicks).TotalSeconds, highestPing);
                     }
                     else
                     {
                         // Client, that was buffering, resumed playback but did not update others in time.
-                        delayTicks = context.GetHighestPing() * 2 * TimeSpan.TicksPerMillisecond;
-                        delayTicks = Math.Max(delayTicks, TimeSpan.FromMilliseconds(context.DefaultPing).Ticks);
+                        delayTicks = highestPing * 2 * TimeSpan.TicksPerMillisecond;
+                        delayTicks = Math.Max(delayTicks, context.DefaultPing);
 
                         context.LastActivity = currentTime.AddTicks(delayTicks);
 
                         var command = context.NewSyncPlayCommand(SendCommandType.Unpause);
                         context.SendCommand(session, SyncPlayBroadcastType.AllGroup, command, cancellationToken);
 
-                        _logger.LogWarning("Session {SessionId} resumed playback, group {GroupId} has {Delay} seconds to recover.", session.Id, context.GroupId.ToString(), TimeSpan.FromTicks(delayTicks).TotalSeconds);
+                        _logger.LogWarning("Session {SessionId} resumed playback, group {GroupId} has {Delay} seconds to recover (highest ping {HighestPing}ms).", session.Id, context.GroupId.ToString(), TimeSpan.FromTicks(delayTicks).TotalSeconds, highestPing);
                     }
 
                     // Change state.

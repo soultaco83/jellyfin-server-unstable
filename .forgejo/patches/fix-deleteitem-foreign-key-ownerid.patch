@@ -1,0 +1,23 @@
+diff --git a/Jellyfin.Server.Implementations/Item/ItemPersistenceService.cs b/Jellyfin.Server.Implementations/Item/ItemPersistenceService.cs
+index 9201a031d5..8cd909e9fd 100644
+--- a/Jellyfin.Server.Implementations/Item/ItemPersistenceService.cs
++++ b/Jellyfin.Server.Implementations/Item/ItemPersistenceService.cs
+@@ -136,6 +136,18 @@ public class ItemPersistenceService : IItemPersistenceService
+         context.ItemValuesMap.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDelete();
+         context.LinkedChildren.WhereOneOrMany(relatedItems, e => e.ParentId).ExecuteDelete();
+         context.LinkedChildren.WhereOneOrMany(relatedItems, e => e.ChildId).ExecuteDelete();
++
++        // Clear OwnerId on any item that references an item being deleted.
++        // BaseItems.OwnerId -> BaseItems.Id uses ON DELETE NO ACTION, so the FK check
++        // fails if any surviving row still has an OwnerId pointing into the deletion batch.
++        // This handles both: extras that are themselves being deleted (ordering-dependent)
++        // and items that reference an item being deleted but were not included in the batch
++        // (e.g. second-order extras of extras).
++        context.BaseItems
++            .Where(e => e.OwnerId != null)
++            .WhereOneOrMany(relatedItems, e => e.OwnerId!.Value)
++            .ExecuteUpdate(e => e.SetProperty(f => f.OwnerId, (Guid?)null));
++
+         context.BaseItems.WhereOneOrMany(relatedItems, e => e.Id).ExecuteDelete();
+         context.KeyframeData.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDelete();
+         context.MediaSegments.WhereOneOrMany(relatedItems, e => e.ItemId).ExecuteDelete();

@@ -1,0 +1,196 @@
+diff --git a/MediaBrowser.MediaEncoding/Encoder/EncodingUtils.cs b/MediaBrowser.MediaEncoding/Encoder/EncodingUtils.cs
+index a525dcfa62..c0c05b67b7 100644
+--- a/MediaBrowser.MediaEncoding/Encoder/EncodingUtils.cs
++++ b/MediaBrowser.MediaEncoding/Encoder/EncodingUtils.cs
+@@ -69,5 +69,16 @@ namespace MediaBrowser.MediaEncoding.Encoder
+ 
+             return string.Format(CultureInfo.InvariantCulture, "{1}:\"{0}\"", path, inputPrefix);
+         }
++
++        /// <summary>
++        /// Normalizes the path.
++        /// </summary>
++        /// <param name="path">The path.</param>
++        /// <returns>System.String.</returns>
++        public static string NormalizePath(string path)
++        {
++            // Quotes are valid path characters in linux and they need to be escaped here with a leading \
++            return path.Replace("\"", "\\\"", StringComparison.Ordinal);
++        }
+     }
+ }
+diff --git a/MediaBrowser.MediaEncoding/Encoder/MediaEncoder.cs b/MediaBrowser.MediaEncoding/Encoder/MediaEncoder.cs
+index 29b9e0e454..892cf3cf6d 100644
+--- a/MediaBrowser.MediaEncoding/Encoder/MediaEncoder.cs
++++ b/MediaBrowser.MediaEncoding/Encoder/MediaEncoder.cs
+@@ -815,54 +815,142 @@ namespace MediaBrowser.MediaEncoding.Encoder
+                 OutputVideoCodec = "mjpeg"
+             };
+             // Builds the input, filter, and encoder arguments for a decode/encode combination, without mutating buildOptions.
+-            (string InputArg, string FilterParam, string VidEncoder) BuildArgs(EncodingOptions buildOptions, bool useHwEncode, bool keyFrameOnly)
++            (string InputArg, string FilterParam, string VidEncoder) BuildArgs(EncodingOptions buildOptions, bool useHwEncode)
+             {
+                 var encoder = useHwEncode ? encodingHelper.GetVideoEncoder(jobState, buildOptions) : jobState.OutputVideoCodec;
+ 
+-            if (!allowHwAccel)
+-            {
+-                inputArg = "-threads " + threads + " " + inputArg; // HW accel args set a different input thread count, only set if disabled
++                var input = encodingHelper.GetInputArgument(jobState, buildOptions, container).Trim();
++                if (string.IsNullOrWhiteSpace(input))
++                {
++                    throw new InvalidOperationException("EncodingHelper returned empty input arguments.");
++                }
++
++                // Derive the actual decode mode from the built args: a requested hardware decoder can silently
++                // resolve to software (codec not enabled, unsupported profile, etc.).
++                var hwDecode = input.Contains("-hwaccel ", StringComparison.Ordinal);
++
++                if (!hwDecode)
++                {
++                    input = "-threads " + threads + " " + input; // HW accel args set a different input thread count, only set if software decoding
++                }
++
++                if (hwDecode && buildOptions.HardwareAccelerationType == HardwareAccelerationType.videotoolbox && _isLowPriorityHwDecodeSupported)
++                {
++                    // VideoToolbox supports low priority decoding, which is useful for trickplay
++                    input = "-hwaccel_flags +low_priority " + input;
++                }
++
++                var filter = encodingHelper.GetVideoProcessingFilterParam(jobState, buildOptions, encoder).Trim();
++                if (string.IsNullOrWhiteSpace(filter))
++                {
++                    throw new InvalidOperationException("EncodingHelper returned empty or invalid filter parameters.");
++                }
++
++                return (input, filter, encoder);
+             }
+ 
+-            if (options.HardwareAccelerationType == HardwareAccelerationType.videotoolbox && _isLowPriorityHwDecodeSupported)
++            // Clones the live config but disables the hardware decoder, keeping the hardware encoder.
++            // Avoids the all-hardware filter graph that some streams break on a mid-stream decode reinit.
++            EncodingOptions BuildSwDecodeHwEncodeOptions()
+             {
+-                // VideoToolbox supports low priority decoding, which is useful for trickplay
+-                inputArg = "-hwaccel_flags +low_priority " + inputArg;
++                var clone = JsonSerializer.Deserialize<EncodingOptions>(
++                    JsonSerializer.SerializeToUtf8Bytes(options, _jsonSerializerOptions),
++                    _jsonSerializerOptions)!;
++                clone.HardwareDecodingCodecs = []; // force software decode, keep the configured encoder
++                // Tonemapping is intentionally disabled on the fallback path: it keeps the filter graph simple
++                // and reliable (the whole point of falling back), and is a no-op for the SDR H.264 sources that
++                // trigger the hardware-decode reinit this fallback exists for.
++                clone.EnableTonemapping = false;
++                return clone;
+             }
+ 
+-            var filterParam = encodingHelper.GetVideoProcessingFilterParam(jobState, options, vidEncoder).Trim();
+-            if (string.IsNullOrWhiteSpace(filterParam))
++            // Ordered fallback attempts, each using less hardware than the last. Options are built lazily so a
++            // successful first attempt costs nothing extra.
++            var attempts = new List<(Func<EncodingOptions> OptionsFactory, bool UseHwEncode, bool KeyFrameOnly)>();
++
++            // Configured pipeline, keeping the keyframe-only sub-retry (I-frame only, then full-frame).
++            if (enableKeyFrameOnlyExtraction)
+             {
+-                throw new InvalidOperationException("EncodingHelper returned empty or invalid filter parameters.");
++                attempts.Add((() => options, enableHwEncoding, true));
+             }
+ 
+-            // Keyframe-only extraction takes whatever keyframes exist, so it never samples a timeline.
+-            var normalizeFrameRate = enableKeyFrameOnlyExtraction
+-                ? 0
+-                : (imageStream.ReferenceFrameRate is > 0 ? imageStream.ReferenceFrameRate.Value : FallbackFrameRate);
++            attempts.Add((() => options, enableHwEncoding, false));
+ 
+-            try
++            // Software decode while keeping the hardware encoder, but only when the configured accelerator
++            // actually resolves to a hardware MJPEG encoder; otherwise this would just duplicate pure software.
++            // The probe reads the live options (the clone only changes decode/tonemap, which do not affect
++            // encoder selection), so no clone is built for an accelerator that cannot use this tier.
++            if (allowHwAccel && enableHwEncoding
++                && !string.Equals(encodingHelper.GetVideoEncoder(jobState, options), jobState.OutputVideoCodec, StringComparison.OrdinalIgnoreCase))
+             {
+-                return await ExtractVideoImagesOnIntervalInternal(
+-                    (enableKeyFrameOnlyExtraction ? "-skip_frame nokey " : string.Empty) + inputArg,
+-                    filterParam,
+-                    normalizeFrameRate,
+-                    vidEncoder,
+-                    qualityScale,
+-                    priority,
+-                    cancellationToken).ConfigureAwait(false);
++                attempts.Add((BuildSwDecodeHwEncodeOptions, true, false));
+             }
+-            catch (FfmpegException ex)
++
++            // Pure software, as a final backstop, but only when hardware is actually configured. Otherwise the
++            // earlier attempts already run on software (e.g. allowHwAccel was force-disabled for keyframe-only)
++            // and this would just duplicate them.
++            if (options.HardwareAccelerationType != HardwareAccelerationType.none)
+             {
+-                if (!enableKeyFrameOnlyExtraction)
++                attempts.Add((() => new EncodingOptions
+                 {
+-                    throw;
++                    EnableHardwareEncoding = false,
++                    HardwareAccelerationType = HardwareAccelerationType.none,
++                    // Tonemapping off, matching the existing software trickplay path: keeps this last-resort
++                    // backstop maximally simple/reliable. (No-op for the SDR sources this fallback targets.)
++                    EnableTonemapping = false
++                }, false, false));
++            }
++
++            for (var i = 0; i < attempts.Count; i++)
++            {
++                var attempt = attempts[i];
++                var isFinalAttempt = i + 1 >= attempts.Count;
++
++                string inputArg, filterParam, vidEncoder;
++                try
++                {
++                    (inputArg, filterParam, vidEncoder) = BuildArgs(attempt.OptionsFactory(), attempt.UseHwEncode);
++                }
++                catch (InvalidOperationException ex) when (!isFinalAttempt)
++                {
++                    // A tier whose arguments cannot be built (e.g. EncodingHelper returned empty args) must not
++                    // abort the whole extraction; fall through to the next, more compatible tier.
++                    _logger.LogWarning(ex, "Trickplay argument building failed, retrying with a more compatible fallback. Input: {InputFile}", inputFile);
++                    continue;
+                 }
+ 
+-                _logger.LogWarning(ex, "I-frame trickplay extraction failed, will attempt standard way. Input: {InputFile}", inputFile);
++                // Keyframe-only extraction takes whatever keyframes exist, so it never samples a timeline.
++                var normalizeFrameRate = attempt.KeyFrameOnly
++                    ? 0
++                    : (imageStream.ReferenceFrameRate is > 0 ? imageStream.ReferenceFrameRate.Value : FallbackFrameRate);
++
++                try
++                {
++                    return await ExtractVideoImagesOnIntervalInternal(
++                        (attempt.KeyFrameOnly ? "-skip_frame nokey " : string.Empty) + inputArg,
++                        filterParam,
++                        normalizeFrameRate,
++                        vidEncoder,
++                        qualityScale,
++                        priority,
++                        cancellationToken).ConfigureAwait(false);
++                }
++                catch (FfmpegException ex) when (!isFinalAttempt)
++                {
++                    // Describe the actual built command, not the requested flags: a hardware decoder/encoder
++                    // can silently resolve to software (codec not enabled, no hardware MJPEG encoder, etc.).
++                    _logger.LogWarning(
++                        ex,
++                        "Trickplay extraction failed ({Decode}, {Encode}{KeyFrame}), retrying with a more compatible fallback. Input: {InputFile}",
++                        inputArg.Contains("-hwaccel ", StringComparison.Ordinal) ? "hardware decode" : "software decode",
++                        string.Equals(vidEncoder, jobState.OutputVideoCodec, StringComparison.OrdinalIgnoreCase) ? "software encode" : "hardware encode",
++                        attempt.KeyFrameOnly ? ", keyframe only" : string.Empty,
++                        inputFile);
++                }
+             }
+ 
+-            return await ExtractVideoImagesOnIntervalInternal(inputArg, filterParam, normalizeFrameRate, vidEncoder, qualityScale, priority, cancellationToken).ConfigureAwait(false);
++            // The final attempt always returns or rethrows, so reaching here is a logic error, not an extraction failure.
++            throw new InvalidOperationException("No trickplay extraction attempt was executed.");
+         }
+ 
+         private async Task<string> ExtractVideoImagesOnIntervalInternal(

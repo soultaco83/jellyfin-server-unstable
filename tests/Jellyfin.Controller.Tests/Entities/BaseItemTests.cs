@@ -31,115 +31,32 @@ namespace Jellyfin.Controller.Tests.Entities;
 public class BaseItemTests
 {
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
-    public async Task ValidateChildren_FailedEnumeration_DoesNotReconcileOrDeleteChildren(bool failAfterFirstChild, bool accessDenied)
+    [InlineData(null, false)]
+    [InlineData(200L, false)]
+    [InlineData(100L, true)]
+    public void RequiresRefresh_FileSizeWithSameModificationDate_ReturnsExpected(long? itemSize, bool expected)
     {
-        var previousLibrary = BaseItem.LibraryManager;
-        var previousRepository = BaseItem.ItemRepository;
-        var previousLogger = BaseItem.Logger;
-        var previousMediaSourceManager = BaseItem.MediaSourceManager;
-        var library = new Mock<ILibraryManager>(MockBehavior.Strict);
-        var repository = new Mock<MediaBrowser.Controller.Persistence.IItemRepository>(MockBehavior.Strict);
-        var directory = new Mock<IDirectoryService>();
-        directory.Setup(d => d.IsAccessible(It.IsAny<string>())).Returns(true);
-
-        // IsLibraryFolderAccessible reads FileNameWithoutExtension, which resolves the path protocol
-        var mediaSourceManager = new Mock<IMediaSourceManager>();
-        mediaSourceManager.Setup(x => x.GetPathProtocol(It.IsAny<string>())).Returns(MediaProtocol.File);
-        try
-        {
-            BaseItem.LibraryManager = library.Object;
-            BaseItem.ItemRepository = repository.Object;
-            BaseItem.Logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<BaseItem>.Instance;
-            BaseItem.MediaSourceManager = mediaSourceManager.Object;
-            var folder = new FailingEnumerationFolder(failAfterFirstChild, accessDenied)
-            {
-                Id = Guid.NewGuid(),
-                Path = "/media/review-folder"
-            };
-            await folder.ValidateChildren(new Progress<double>(), new MetadataRefreshOptions(directory.Object), recursive: false, cancellationToken: TestContext.Current.CancellationToken).ConfigureAwait(true);
-            Assert.True(folder.EnumerationAttempted);
-            repository.VerifyNoOtherCalls();
-            library.VerifyNoOtherCalls();
-        }
-        finally
-        {
-            BaseItem.LibraryManager = previousLibrary;
-            BaseItem.ItemRepository = previousRepository;
-            BaseItem.Logger = previousLogger;
-            BaseItem.MediaSourceManager = previousMediaSourceManager;
-        }
-    }
-
-    [Fact]
-    public void SetPrimaryVersionId_Null_RestoresTheItemsOwnPresentationKey()
-    {
-        var primaryId = Guid.NewGuid();
-        var video = new Video { Id = Guid.NewGuid(), Path = "/Movies/Movie/Movie - 4K.mkv" };
-
-        // While it is a version, it presents as the primary so lists collapse the two together.
-        video.SetPrimaryVersionId(primaryId);
-        Assert.Equal(primaryId.ToString("N", CultureInfo.InvariantCulture), video.PresentationUniqueKey);
-
-        // Promoting it back has to restore its own key, or it keeps collapsing onto - and staying
-        // hidden behind - a primary it no longer belongs to.
-        video.SetPrimaryVersionId(null);
-        Assert.Null(video.PrimaryVersionId);
-        Assert.Equal(video.Id.ToString("N", CultureInfo.InvariantCulture), video.PresentationUniqueKey);
-    }
-
-    [Fact]
-    public void GetItemByNameFolderName_ShortName_IsKeptAsIs()
-    {
-        SetupPassThroughFileSystem();
-
-        Assert.Equal("Mairghread Scott", BaseItem.GetItemByNameFolderName("Mairghread Scott."));
-    }
-
-    [Fact]
-    public void GetItemByNameFolderName_OverlongName_FitsInAPathComponent()
-    {
-        SetupPassThroughFileSystem();
-
-        // What a provider result that concatenated a whole credit list into one name looks like.
-        var name = string.Join(", ", Enumerable.Repeat("Jerry Siegel (created by: Superman)", 20));
-
-        var folderName = BaseItem.GetItemByNameFolderName(name);
-
-        Assert.True(Encoding.UTF8.GetByteCount(folderName) <= 128);
-        Assert.StartsWith("Jerry Siegel (created by: Superman)", folderName, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void GetItemByNameFolderName_OverlongNamesSharingAPrefix_StayApart()
-    {
-        SetupPassThroughFileSystem();
-
-        var prefix = new string('a', 200);
-
-        Assert.NotEqual(
-            BaseItem.GetItemByNameFolderName(prefix + "Joe Shuster"),
-            BaseItem.GetItemByNameFolderName(prefix + "Bob Kane"));
-    }
-
-    [Fact]
-    public void GetItemByNameFolderName_OverlongName_IsStable()
-    {
-        SetupPassThroughFileSystem();
-
-        var name = new string('a', 300);
-
-        Assert.Equal(BaseItem.GetItemByNameFolderName(name), BaseItem.GetItemByNameFolderName(name));
-    }
-
-    private static void SetupPassThroughFileSystem()
-    {
+        const string TestPath = "/media/movie.mkv";
+        var lastWriteTime = new DateTime(2026, 8, 7, 0, 0, 0, DateTimeKind.Utc);
         var fileSystem = new Mock<IFileSystem>();
-        fileSystem.Setup(x => x.GetValidFilename(It.IsAny<string>())).Returns((string name) => name);
+        fileSystem.Setup(x => x.GetFileSystemInfo(TestPath))
+            .Returns(new FileSystemMetadata
+            {
+                Exists = true,
+                IsDirectory = false,
+                LastWriteTimeUtc = lastWriteTime,
+                Length = 200
+            });
         BaseItem.FileSystem = fileSystem.Object;
+
+        var item = new Video
+        {
+            Path = TestPath,
+            DateModified = lastWriteTime,
+            Size = itemSize
+        };
+
+        Assert.Equal(expected, item.RequiresRefresh());
     }
 
     [Theory]

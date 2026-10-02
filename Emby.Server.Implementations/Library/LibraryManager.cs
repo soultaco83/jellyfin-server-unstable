@@ -3871,7 +3871,7 @@ namespace Emby.Server.Implementations.Library
 
                         if (shouldRefreshLibrary)
                         {
-                            StartScanInBackground();
+                            _ = StartScanInBackground();
                         }
                         else
                         {

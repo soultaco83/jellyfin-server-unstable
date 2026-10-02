@@ -28,6 +28,11 @@ namespace Emby.Server.Implementations.SyncPlay
     public class Group : IGroupStateContext
     {
         /// <summary>
+        /// The default value of <see cref="GroupWaitTimeout"/>, in milliseconds.
+        /// </summary>
+        internal const long DefaultGroupWaitTimeout = 30000;
+
+        /// <summary>
         /// Smoothing factor applied when a new ping sample is higher than the current average
         /// ("attack"). Weighted more heavily than <see cref="PingDecreaseSmoothingFactor"/> so a
         /// real increase in latency is reflected quickly, since under-compensating for a session

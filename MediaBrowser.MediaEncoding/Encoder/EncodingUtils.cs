@@ -69,5 +69,16 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
             return string.Format(CultureInfo.InvariantCulture, "{1}:\"{0}\"", path, inputPrefix);
         }
+
+        /// <summary>
+        /// Normalizes the path.
+        /// </summary>
+        /// <param name="path">The path.</param>
+        /// <returns>System.String.</returns>
+        public static string NormalizePath(string path)
+        {
+            // Quotes are valid path characters in linux and they need to be escaped here with a leading \
+            return path.Replace("\"", "\\\"", StringComparison.Ordinal);
+        }
     }
 }

@@ -1,0 +1,263 @@
+--- a/Jellyfin/backend/PluginConfiguration.cs
++++ b/Jellyfin/backend/PluginConfiguration.cs
+@@ -31,6 +31,13 @@
+     /// </summary>
+     public string? SeerrDisplayName { get; set; }
+ 
++    /// <summary>
++    /// Set once the per-user Seerr opt-outs that older clients wrote on the user's behalf
++    /// have been cleared, so that cleanup runs a single time. A user who turns Seerr off
++    /// afterwards keeps it off across restarts.
++    /// </summary>
++    public int SeerrOptOutResetVersion { get; set; }
++
+     // Legacy keys from before the Jellyseerr -> Seerr rename. Kept only so existing
+     // configs deserialize; MigrateLegacyKeys() copies them into the Seerr* keys on load.
+     public string? JellyseerrUrl { get; set; }
+--- a/Jellyfin/backend/Services/MoonfinSettingsService.cs
++++ b/Jellyfin/backend/Services/MoonfinSettingsService.cs
+@@ -1330,6 +1330,77 @@
+         StripServerWideKeys(settings.Tv);
+     }
+ 
++    /// <summary>
++    /// Clears the per-user Seerr opt-out that clients wrote without the user asking for it.
++    /// The client shipped a local default of false and echoed it into the profile on every
++    /// push, which then beat the admin's "enable Seerr for all users" on every later login
++    /// and left each affected user to switch Seerr on by hand. Dropping the value puts the
++    /// flag back to unset, which is what makes the server default apply again.
++    /// </summary>
++    /// <returns>The number of users whose stale value was cleared.</returns>
++    public async Task<int> ClearStaleSeerrOptOutsAsync()
++    {
++        if (!Directory.Exists(_dataPath))
++        {
++            return 0;
++        }
++
++        var cleared = 0;
++
++        await _lock.WaitAsync();
++        try
++        {
++            foreach (var file in Directory.EnumerateFiles(_dataPath, "*.json"))
++            {
++                var fileName = Path.GetFileNameWithoutExtension(file);
++                if (!Guid.TryParse(fileName, out _))
++                {
++                    continue;
++                }
++
++                var settings = ReadSettingsWithRecovery(file);
++                if (settings == null)
++                {
++                    continue;
++                }
++
++                if (settings.NeedsMigration)
++                {
++                    settings = MigrateV1ToV2(settings);
++                }
++
++                var changed = false;
++
++                if (settings.Global?.SeerrEnabled == false)
++                {
++                    settings.Global.SeerrEnabled = null;
++                    changed = true;
++                }
++
++                // v1 carried the flag at the root, and the read path still falls back to it.
++                if (settings.SeerrEnabled == false)
++                {
++                    settings.SeerrEnabled = null;
++                    changed = true;
++                }
++
++                if (!changed)
++                {
++                    continue;
++                }
++
++                AtomicFile.WriteAllText(file, JsonSerializer.Serialize(settings, _jsonOptions));
++                cleared++;
++            }
++        }
++        finally
++        {
++            _lock.Release();
++        }
++
++        return cleared;
++    }
++
+     public async Task<List<(Guid UserId, MoonfinUserSettings Settings)>> GetAllUserSettingsAsync()
+     {
+         var result = new List<(Guid, MoonfinUserSettings)>();
+--- a/Jellyfin/backend/Services/SeerrProvisioningStartupService.cs
++++ b/Jellyfin/backend/Services/SeerrProvisioningStartupService.cs
+@@ -11,14 +11,17 @@
+ public class SeerrProvisioningStartupService : IHostedService
+ {
+     private readonly SeerrProvisioningService _provisioning;
++    private readonly MoonfinSettingsService _settings;
+     private readonly ILogger<SeerrProvisioningStartupService> _logger;
+     private CancellationTokenSource? _cts;
+ 
+     public SeerrProvisioningStartupService(
+         SeerrProvisioningService provisioning,
++        MoonfinSettingsService settings,
+         ILogger<SeerrProvisioningStartupService> logger)
+     {
+         _provisioning = provisioning;
++        _settings = settings;
+         _logger = logger;
+     }
+ 
+@@ -33,6 +36,7 @@
+             try
+             {
+                 await Task.Delay(TimeSpan.FromSeconds(20), token);
++                await ClearStaleSeerrOptOutsAsync();
+                 var result = await _provisioning.EnsureWebhookAsync(token);
+ 
+                 // An outcome the admin has to act on is worth an ordinary log line, the
+@@ -59,6 +63,48 @@
+         return Task.CompletedTask;
+     }
+ 
++    /// <summary>
++    /// Undoes the per-user opt-out that older clients pushed on the user's behalf.
++    /// A client that had never been asked echoed its own false default into the profile,
++    /// and that stored false outranked the admin's Seerr switch on every later login, so
++    /// each user had to enable Seerr by hand. Clearing it once restores the default.
++    /// Guarded by a config version, so a user who turns Seerr off afterwards stays off.
++    /// </summary>
++    private async Task ClearStaleSeerrOptOutsAsync()
++    {
++        try
++        {
++            var plugin = MoonfinPlugin.Instance;
++            var config = plugin?.Configuration;
++            if (config == null || !config.SeerrEnabled)
++            {
++                return;
++            }
++
++            if (config.SeerrOptOutResetVersion >= 1)
++            {
++                return;
++            }
++
++            var cleared = await _settings.ClearStaleSeerrOptOutsAsync();
++
++            config.SeerrOptOutResetVersion = 1;
++            plugin?.SaveConfiguration();
++
++            if (cleared > 0)
++            {
++                _logger.LogInformation(
++                    "Cleared a stale Seerr opt-out for {Count} user(s) so the admin Seerr setting applies again.",
++                    cleared);
++            }
++        }
++        catch (Exception ex)
++        {
++            // Never fatal: the next start retries because the version is still unset.
++            _logger.LogDebug(ex, "Clearing stale Seerr opt-outs failed (non-fatal)");
++        }
++    }
++
+     public Task StopAsync(CancellationToken cancellationToken)
+     {
+         _cts?.Cancel();
+--- /dev/null
++++ b/Jellyfin/tests/Moonfin.Server.Tests/SeerrOptOutMigrationTests.cs
+@@ -0,0 +1,87 @@
++using System.Text.Json;
++using Moonfin.Server.Models;
++using Moonfin.Server.Services;
++using Xunit;
++
++namespace Moonfin.Server.Tests;
++
++/// <summary>
++/// Clients used to push their own local false for the per-user Seerr switch, and that stored
++/// false then beat the admin's "enable Seerr for all users" on every later login. The cleanup
++/// has to drop a stored false, leave a deliberate true alone, and skip users who never carried
++/// the flag at all.
++/// </summary>
++public sealed class SeerrOptOutMigrationTests : IDisposable
++{
++    private readonly string _dataPath;
++    private readonly MoonfinSettingsService _service;
++
++    public SeerrOptOutMigrationTests()
++    {
++        _dataPath = Path.Combine(Path.GetTempPath(), "moonfin-seerr-tests-" + Guid.NewGuid().ToString("N"));
++        _service = new MoonfinSettingsService(new NoOpLogger<MoonfinSettingsService>(), _dataPath);
++    }
++
++    public void Dispose()
++    {
++        if (Directory.Exists(_dataPath))
++        {
++            Directory.Delete(_dataPath, recursive: true);
++        }
++    }
++
++    private Guid SeedUser(bool? seerrEnabled)
++    {
++        var userId = Guid.NewGuid();
++        var json = JsonSerializer.Serialize(
++            new MoonfinUserSettings
++            {
++                SchemaVersion = 2,
++                SyncEnabled = true,
++                Global = new MoonfinSettingsProfile
++                {
++                    SeerrEnabled = seerrEnabled,
++                    CinemaModeEnabled = true,
++                },
++                LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
++                LastUpdatedBy = "test-seed",
++            },
++            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
++
++        Directory.CreateDirectory(_dataPath);
++        File.WriteAllText(Path.Combine(_dataPath, userId + ".json"), json);
++        return userId;
++    }
++
++    private MoonfinUserSettings Read(Guid userId)
++    {
++        var json = File.ReadAllText(Path.Combine(_dataPath, userId + ".json"));
++        return JsonSerializer.Deserialize<MoonfinUserSettings>(
++            json,
++            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase })!;
++    }
++
++    [Fact]
++    public async Task ClearingStaleOptOutsDropsTheStoredFalseAndKeepsTheRest()
++    {
++        var optedOut = SeedUser(seerrEnabled: false);
++        var optedIn = SeedUser(seerrEnabled: true);
++        var neverSet = SeedUser(seerrEnabled: null);
++
++        var cleared = await _service.ClearStaleSeerrOptOutsAsync();
++
++        Assert.Equal(1, cleared);
++
++        // The stored false is what made the admin setting lose, so it has to become unset
++        // rather than true: unset is what lets the server default apply again.
++        Assert.Null(Read(optedOut).Global!.SeerrEnabled);
++
++        // A user who asked for Seerr keeps it, and one who never touched the switch is left
++        // as they were.
++        Assert.Equal(true, Read(optedIn).Global!.SeerrEnabled);
++        Assert.Null(Read(neverSet).Global!.SeerrEnabled);
++
++        // A second pass finds nothing left to do, which is what lets a later opt-out stand.
++        Assert.Equal(0, await _service.ClearStaleSeerrOptOutsAsync());
++    }
++}

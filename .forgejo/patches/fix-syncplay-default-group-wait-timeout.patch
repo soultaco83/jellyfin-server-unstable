@@ -1,0 +1,16 @@
+diff --git a/Emby.Server.Implementations/SyncPlay/Group.cs b/Emby.Server.Implementations/SyncPlay/Group.cs
+index 2192f07d91..1cfdfadbfe 100644
+--- a/Emby.Server.Implementations/SyncPlay/Group.cs
++++ b/Emby.Server.Implementations/SyncPlay/Group.cs
+@@ -27,6 +27,11 @@ namespace Emby.Server.Implementations.SyncPlay
+     /// </remarks>
+     public class Group : IGroupStateContext
+     {
++        /// <summary>
++        /// The default value of <see cref="GroupWaitTimeout"/>, in milliseconds.
++        /// </summary>
++        internal const long DefaultGroupWaitTimeout = 30000;
++
+         /// <summary>
+         /// Smoothing factor applied when a new ping sample is higher than the current average
+         /// ("attack"). Weighted more heavily than <see cref="PingDecreaseSmoothingFactor"/> so a

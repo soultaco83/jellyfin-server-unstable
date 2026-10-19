@@ -1,0 +1,13 @@
+diff --git a/Emby.Server.Implementations/Library/LibraryManager.cs b/Emby.Server.Implementations/Library/LibraryManager.cs
+index db580333e1..d728de8f91 100644
+--- a/Emby.Server.Implementations/Library/LibraryManager.cs
++++ b/Emby.Server.Implementations/Library/LibraryManager.cs
+@@ -3833,7 +3833,7 @@ namespace Emby.Server.Implementations.Library
+ 
+                         if (shouldRefreshLibrary)
+                         {
+-                            StartScanInBackground();
++                            _ = StartScanInBackground();
+                         }
+                         else
+                         {

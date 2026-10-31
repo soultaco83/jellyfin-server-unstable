@@ -1,0 +1,210 @@
+diff --git a/Jellyfin.Api/Controllers/DynamicHlsController.cs b/Jellyfin.Api/Controllers/DynamicHlsController.cs
+index 3b47db3457..bb39b8ae66 100644
+--- a/Jellyfin.Api/Controllers/DynamicHlsController.cs
++++ b/Jellyfin.Api/Controllers/DynamicHlsController.cs
+@@ -1404,7 +1404,7 @@ public class DynamicHlsController : BaseJellyfinApiController
+                 cancellationTokenSource.Token)
+             .ConfigureAwait(false);
+         var request = GetMainPlaylistRequest(state, "hls1/main/", Request.QueryString.ToString());
+-        var playlist = _dynamicHlsPlaylistGenerator.CreateMainPlaylist(request);
++        var playlist = await _dynamicHlsPlaylistGenerator.CreateMainPlaylistAsync(request, cancellationTokenSource.Token).ConfigureAwait(false);
+ 
+         return new FileContentResult(Encoding.UTF8.GetBytes(playlist), MimeTypes.GetMimeType("playlist.m3u8"));
+     }
+@@ -1494,7 +1494,7 @@ public class DynamicHlsController : BaseJellyfinApiController
+                         await DeleteLastFile(playlistPath, segmentExtension, 0).ConfigureAwait(false);
+                     }
+ 
+-                    var (startSegment, startTimeTicks, segmentStarts) = GetRunStartPosition(state, segmentId, streamingRequest.CurrentRuntimeTicks);
++                    var (startSegment, startTimeTicks, segmentStarts) = await GetRunStartPositionAsync(state, segmentId, streamingRequest.CurrentRuntimeTicks, cancellationToken).ConfigureAwait(false);
+                     streamingRequest.StartTimeTicks = startTimeTicks;
+ 
+                     state.WaitForPath = segmentPath;
+@@ -1680,19 +1680,24 @@ public class DynamicHlsController : BaseJellyfinApiController
+             outputPath.EscapeProcessArgument());
+     }
+ 
+-    private bool TryGetSegmentMuxerSegmentStarts(StreamState state, [NotNullWhen(true)] out long[]? segmentStarts)
++    private async Task<long[]?> GetSegmentMuxerSegmentStartsAsync(StreamState state, CancellationToken cancellationToken)
+     {
+         // The hls muxer cuts from wherever ffmpeg restarted, so after a seek its segments drift from the keyframe playlist.
+         // The segment muxer cuts at the playlist's own times, relative to its first packet since FFmpeg 6.0, which requires
+         // a playlist cut at keyframes: the even grid of a file without keyframe data is not.
+-        segmentStarts = null;
+         if (!state.IsOutputVideo
+             || !EncodingHelper.IsCopyCodec(state.OutputVideoCodec)
+-            || _mediaEncoder.EncoderVersion < _minFFmpegSegmentTimesFromFirstPacket
+-            || !_dynamicHlsPlaylistGenerator.TryGetKeyframeSegmentLengths(GetMainPlaylistRequest(state, string.Empty, string.Empty), out var segmentLengths)
+-            || segmentLengths.Count == 0)
++            || _mediaEncoder.EncoderVersion < _minFFmpegSegmentTimesFromFirstPacket)
+         {
+-            return false;
++            return null;
++        }
++
++        var segmentLengths = await _dynamicHlsPlaylistGenerator
++            .GetKeyframeSegmentLengthsAsync(GetMainPlaylistRequest(state, string.Empty, string.Empty), cancellationToken)
++            .ConfigureAwait(false);
++        if (segmentLengths is null || segmentLengths.Count == 0)
++        {
++            return null;
+         }
+ 
+         // The muxers write different init files, so a stream keeps one muxer: if the cut list from the first segment
+@@ -1700,11 +1705,10 @@ public class DynamicHlsController : BaseJellyfinApiController
+         var starts = GetSegmentStartTicks(segmentLengths);
+         if (GetSegmentCutArguments(starts, 0).Length > MaxSegmentCutArgumentsLength)
+         {
+-            return false;
++            return null;
+         }
+ 
+-        segmentStarts = starts;
+-        return true;
++        return starts;
+     }
+ 
+     private static string GetSegmentMuxerArguments(int startNumber, string cutArguments, string outputPrefix, string outputExtension)
+@@ -1747,10 +1751,11 @@ public class DynamicHlsController : BaseJellyfinApiController
+         return "-segment_times " + string.Join(',', cutTimes) + " -segment_time_delta " + seekOffset;
+     }
+ 
+-    private (int SegmentId, long StartTimeTicks, long[]? SegmentStarts) GetRunStartPosition(StreamState state, int segmentId, long currentRuntimeTicks)
++    private async Task<(int SegmentId, long StartTimeTicks, long[]? SegmentStarts)> GetRunStartPositionAsync(StreamState state, int segmentId, long currentRuntimeTicks, CancellationToken cancellationToken)
+     {
+         // A segment past the playlist's end comes from a playlist written before the file changed, only the hls muxer can produce it
+-        if (TryGetSegmentMuxerSegmentStarts(state, out var segmentStarts) && segmentId < segmentStarts.Length)
++        var segmentStarts = await GetSegmentMuxerSegmentStartsAsync(state, cancellationToken).ConfigureAwait(false);
++        if (segmentStarts is not null && segmentId < segmentStarts.Length)
+         {
+             var startSegment = GetSeekableSegment(segmentStarts, segmentId, state.RunTimeTicks ?? 0);
+             return (startSegment, segmentStarts[startSegment], segmentStarts);
+@@ -1775,7 +1780,7 @@ public class DynamicHlsController : BaseJellyfinApiController
+ 
+     internal static long[] GetSegmentStartTicks(IReadOnlyList<double> segmentLengths)
+     {
+-        // Summed the way CreateMainPlaylist sums them, so these are the runtimeTicks values it advertises
++        // Summed the way CreateMainPlaylistAsync sums them, so these are the runtimeTicks values it advertises
+         var starts = new long[segmentLengths.Count];
+         long ticks = 0;
+         for (var i = 0; i < segmentLengths.Count; i++)
+diff --git a/src/Jellyfin.MediaEncoding.Hls/Playlist/DynamicHlsPlaylistGenerator.cs b/src/Jellyfin.MediaEncoding.Hls/Playlist/DynamicHlsPlaylistGenerator.cs
+index 79d901665f..343a251afe 100644
+--- a/src/Jellyfin.MediaEncoding.Hls/Playlist/DynamicHlsPlaylistGenerator.cs
++++ b/src/Jellyfin.MediaEncoding.Hls/Playlist/DynamicHlsPlaylistGenerator.cs
+@@ -1,6 +1,5 @@
+ using System;
+ using System.Collections.Generic;
+-using System.Diagnostics.CodeAnalysis;
+ using System.Globalization;
+ using System.IO;
+ using System.Linq;
+@@ -33,27 +32,25 @@ public class DynamicHlsPlaylistGenerator : IDynamicHlsPlaylistGenerator
+     }
+ 
+     /// <inheritdoc />
+-    public bool TryGetKeyframeSegmentLengths(CreateMainPlaylistRequest request, [NotNullWhen(true)] out IReadOnlyList<double>? segmentLengths)
++    public async Task<IReadOnlyList<double>?> GetKeyframeSegmentLengthsAsync(CreateMainPlaylistRequest request, CancellationToken cancellationToken)
+     {
+         // For video transcodes it is sufficient with equal length segments as ffmpeg will create new keyframes
+         if (request.IsRemuxingVideo
+             && request.MediaSourceId is not null
+             && await ExtractKeyframesAsync(request.MediaSourceId.Value, request.FilePath, cancellationToken).ConfigureAwait(false) is { } keyframeData)
+         {
+-            segmentLengths = ComputeSegments(keyframeData, request.DesiredSegmentLengthMs);
+-            return true;
++            return ComputeSegments(keyframeData, request.DesiredSegmentLengthMs);
+         }
+ 
+-        segmentLengths = null;
+-        return false;
++        return null;
+     }
+ 
+     /// <inheritdoc />
+-    public string CreateMainPlaylist(CreateMainPlaylistRequest request)
++    public async Task<string> CreateMainPlaylistAsync(CreateMainPlaylistRequest request, CancellationToken cancellationToken)
+     {
+-        var segments = TryGetKeyframeSegmentLengths(request, out var keyframeSegments)
+-            ? keyframeSegments
+-            : ComputeEqualLengthSegments(request.DesiredSegmentLengthMs, request.TotalRuntimeTicks);
++        var keyframeSegments = await GetKeyframeSegmentLengthsAsync(request, cancellationToken).ConfigureAwait(false);
++        var segments = keyframeSegments
++            ?? ComputeEqualLengthSegments(request.DesiredSegmentLengthMs, request.TotalRuntimeTicks);
+ 
+         var segmentExtension = EncodingHelper.GetSegmentFileExtension(request.SegmentContainer);
+ 
+diff --git a/src/Jellyfin.MediaEncoding.Hls/Playlist/IDynamicHlsPlaylistGenerator.cs b/src/Jellyfin.MediaEncoding.Hls/Playlist/IDynamicHlsPlaylistGenerator.cs
+index 2bf224aa16..a61ab8d4bb 100644
+--- a/src/Jellyfin.MediaEncoding.Hls/Playlist/IDynamicHlsPlaylistGenerator.cs
++++ b/src/Jellyfin.MediaEncoding.Hls/Playlist/IDynamicHlsPlaylistGenerator.cs
+@@ -1,5 +1,6 @@
+ using System.Collections.Generic;
+-using System.Diagnostics.CodeAnalysis;
++using System.Threading;
++using System.Threading.Tasks;
+ 
+ namespace Jellyfin.MediaEncoding.Hls.Playlist;
+ 
+@@ -14,13 +15,13 @@ public interface IDynamicHlsPlaylistGenerator
+     /// <param name="request">An instance of the <see cref="CreateMainPlaylistRequest"/> class.</param>
+     /// <param name="cancellationToken">The cancellation token.</param>
+     /// <returns>The playlist as a formatted string.</returns>
+-    string CreateMainPlaylist(CreateMainPlaylistRequest request);
++    Task<string> CreateMainPlaylistAsync(CreateMainPlaylistRequest request, CancellationToken cancellationToken);
+ 
+     /// <summary>
+     /// Gets the length of every segment of the main playlist when the playlist is cut at the keyframes of the file.
+     /// </summary>
+     /// <param name="request">An instance of the <see cref="CreateMainPlaylistRequest"/> class.</param>
+-    /// <param name="segmentLengths">The segment lengths in seconds, in playlist order.</param>
+-    /// <returns><c>true</c> if the playlist is cut at keyframes, <c>false</c> if it uses equal lengths because the video is transcoded or has no keyframe data.</returns>
+-    bool TryGetKeyframeSegmentLengths(CreateMainPlaylistRequest request, [NotNullWhen(true)] out IReadOnlyList<double>? segmentLengths);
++    /// <param name="cancellationToken">The cancellation token.</param>
++    /// <returns>The segment lengths in seconds, in playlist order, or <c>null</c> when the playlist uses equal lengths because the video is transcoded or has no keyframe data.</returns>
++    Task<IReadOnlyList<double>?> GetKeyframeSegmentLengthsAsync(CreateMainPlaylistRequest request, CancellationToken cancellationToken);
+ }
+diff --git a/tests/Jellyfin.Api.Tests/Controllers/DynamicHlsControllerTests.cs b/tests/Jellyfin.Api.Tests/Controllers/DynamicHlsControllerTests.cs
+index 68f7d4023c..37ab595c7e 100644
+--- a/tests/Jellyfin.Api.Tests/Controllers/DynamicHlsControllerTests.cs
++++ b/tests/Jellyfin.Api.Tests/Controllers/DynamicHlsControllerTests.cs
+@@ -143,7 +143,7 @@ namespace Jellyfin.Api.Tests.Controllers
+         }
+ 
+         [Fact]
+-        public void GetSegmentStartTicks_MatchesPlaylistRuntimeTicks()
++        public async Task GetSegmentStartTicks_MatchesPlaylistRuntimeTicks()
+         {
+             // Uneven keyframe gaps with odd tick counts, so the segment lengths have fractional ticks that must round the way the playlist does
+             long[] gaps = [23_560_001, 34_560_002, 13_780_004, 28_140_002, 17_960_002, 27_330_002];
+@@ -156,23 +156,25 @@ namespace Jellyfin.Api.Tests.Controllers
+             KeyframeData? keyframes = new KeyframeData(1_800_000_000, keyframeTicks);
+             var extractor = new Mock<IKeyframeExtractor>();
+             extractor.SetupGet(e => e.IsMetadataBased).Returns(true);
+-            extractor.Setup(e => e.TryExtractKeyframes(It.IsAny<Guid>(), It.IsAny<string>(), out keyframes)).Returns(true);
++            extractor.Setup(e => e.ExtractKeyframesAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
++                .ReturnsAsync(keyframes);
+             var config = new Mock<IServerConfigurationManager>();
+             config.Setup(c => c.GetConfiguration("encoding"))
+                 .Returns(new EncodingOptions { AllowOnDemandMetadataBasedKeyframeExtractionForExtensions = ["mkv"] });
+             var generator = new DynamicHlsPlaylistGenerator(config.Object, [extractor.Object]);
+             var request = new CreateMainPlaylistRequest(Guid.NewGuid(), "/media/film.mkv", 6000, 1_800_000_000, "mp4", "hls1/main/", "?a=b", true);
+ 
+-            var advertised = generator.CreateMainPlaylist(request)
++            var advertised = (await generator.CreateMainPlaylistAsync(request, CancellationToken.None))
+                 .Split('\n')
+                 .Where(line => line.Length > 0 && line[0] != '#')
+                 .Select(line => long.Parse(Regex.Match(line, @"runtimeTicks=(\d+)").Groups[1].Value, CultureInfo.InvariantCulture))
+                 .ToArray();
+-            Assert.True(generator.TryGetKeyframeSegmentLengths(request, out var lengths));
+-            var computed = DynamicHlsController.GetSegmentStartTicks(lengths);
++            var lengths = await generator.GetKeyframeSegmentLengthsAsync(request, CancellationToken.None);
++            Assert.NotNull(lengths);
++            var computed = DynamicHlsController.GetSegmentStartTicks(lengths!);
+ 
+             // The keyframe path, not the even 6 s grid, is what makes the rounding matter
+-            Assert.Contains(lengths, length => Math.Abs(length - 6) > 0.001);
++            Assert.Contains(lengths!, length => Math.Abs(length - 6) > 0.001);
+             Assert.Equal(advertised, computed);
+         }
+ 

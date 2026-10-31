@@ -143,7 +143,7 @@ namespace Jellyfin.Api.Tests.Controllers
         }
 
         [Fact]
-        public void GetSegmentStartTicks_MatchesPlaylistRuntimeTicks()
+        public async Task GetSegmentStartTicks_MatchesPlaylistRuntimeTicks()
         {
             // Uneven keyframe gaps with odd tick counts, so the segment lengths have fractional ticks that must round the way the playlist does
             long[] gaps = [23_560_001, 34_560_002, 13_780_004, 28_140_002, 17_960_002, 27_330_002];
@@ -156,23 +156,25 @@ namespace Jellyfin.Api.Tests.Controllers
             KeyframeData? keyframes = new KeyframeData(1_800_000_000, keyframeTicks);
             var extractor = new Mock<IKeyframeExtractor>();
             extractor.SetupGet(e => e.IsMetadataBased).Returns(true);
-            extractor.Setup(e => e.TryExtractKeyframes(It.IsAny<Guid>(), It.IsAny<string>(), out keyframes)).Returns(true);
+            extractor.Setup(e => e.ExtractKeyframesAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(keyframes);
             var config = new Mock<IServerConfigurationManager>();
             config.Setup(c => c.GetConfiguration("encoding"))
                 .Returns(new EncodingOptions { AllowOnDemandMetadataBasedKeyframeExtractionForExtensions = ["mkv"] });
             var generator = new DynamicHlsPlaylistGenerator(config.Object, [extractor.Object]);
             var request = new CreateMainPlaylistRequest(Guid.NewGuid(), "/media/film.mkv", 6000, 1_800_000_000, "mp4", "hls1/main/", "?a=b", true);
 
-            var advertised = generator.CreateMainPlaylist(request)
+            var advertised = (await generator.CreateMainPlaylistAsync(request, CancellationToken.None))
                 .Split('\n')
                 .Where(line => line.Length > 0 && line[0] != '#')
                 .Select(line => long.Parse(Regex.Match(line, @"runtimeTicks=(\d+)").Groups[1].Value, CultureInfo.InvariantCulture))
                 .ToArray();
-            Assert.True(generator.TryGetKeyframeSegmentLengths(request, out var lengths));
-            var computed = DynamicHlsController.GetSegmentStartTicks(lengths);
+            var lengths = await generator.GetKeyframeSegmentLengthsAsync(request, CancellationToken.None);
+            Assert.NotNull(lengths);
+            var computed = DynamicHlsController.GetSegmentStartTicks(lengths!);
 
             // The keyframe path, not the even 6 s grid, is what makes the rounding matter
-            Assert.Contains(lengths, length => Math.Abs(length - 6) > 0.001);
+            Assert.Contains(lengths!, length => Math.Abs(length - 6) > 0.001);
             Assert.Equal(advertised, computed);
         }
 

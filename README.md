@@ -1,6 +1,43 @@
 <h1 align="center">Jellyfin</h1>
 <h3 align="center">The Free Software Media System</h3>
 
+## Currently Installed PRs
+
+The following PRs are automatically merged into this fork:
+
+- [Upstream PR #12011](https://github.com/jellyfin/jellyfin/pull/12011)
+- [Upstream PR #16228](https://github.com/jellyfin/jellyfin/pull/16228)
+- [Upstream PR #16399](https://github.com/jellyfin/jellyfin/pull/16399)
+- [Upstream PR #16585](https://github.com/jellyfin/jellyfin/pull/16585)
+- [Upstream PR #16724](https://github.com/jellyfin/jellyfin/pull/16724)
+- [Upstream PR #16787](https://github.com/jellyfin/jellyfin/pull/16787)
+- [Upstream PR #16875](https://github.com/jellyfin/jellyfin/pull/16875)
+- [Upstream PR #16916](https://github.com/jellyfin/jellyfin/pull/16916)
+- [Upstream PR #17132](https://github.com/jellyfin/jellyfin/pull/17132)
+- [Upstream PR #17258](https://github.com/jellyfin/jellyfin/pull/17258)
+- [Upstream PR #17309](https://github.com/jellyfin/jellyfin/pull/17309)
+- [Upstream PR #17420](https://github.com/jellyfin/jellyfin/pull/17420)
+- [Upstream PR #17480](https://github.com/jellyfin/jellyfin/pull/17480)
+- [Upstream PR #17496](https://github.com/jellyfin/jellyfin/pull/17496)
+- [Upstream PR #17509](https://github.com/jellyfin/jellyfin/pull/17509)
+- [Upstream PR #17522](https://github.com/jellyfin/jellyfin/pull/17522)
+- [Upstream PR #17625](https://github.com/jellyfin/jellyfin/pull/17625)
+- [Upstream PR #17649](https://github.com/jellyfin/jellyfin/pull/17649)
+- [Upstream PR #17813](https://github.com/jellyfin/jellyfin/pull/17813)
+- [Upstream PR #18027](https://github.com/jellyfin/jellyfin/pull/18027)
+- [Upstream PR #18188](https://github.com/jellyfin/jellyfin/pull/18188)
+- [Upstream PR #18290](https://github.com/jellyfin/jellyfin/pull/18290)
+- [Upstream PR #18305](https://github.com/jellyfin/jellyfin/pull/18305)
+- [Upstream PR #18377](https://github.com/jellyfin/jellyfin/pull/18377)
+- [Upstream PR #18383](https://github.com/jellyfin/jellyfin/pull/18383)
+- [Upstream PR #18403](https://github.com/jellyfin/jellyfin/pull/18403)
+- [Upstream PR #18465](https://github.com/jellyfin/jellyfin/pull/18465)
+- [Upstream PR #18470](https://github.com/jellyfin/jellyfin/pull/18470)
+- [Upstream PR #18489](https://github.com/jellyfin/jellyfin/pull/18489)
+- [Upstream PR #18504](https://github.com/jellyfin/jellyfin/pull/18504)
+- [Upstream PR #18519](https://github.com/jellyfin/jellyfin/pull/18519)
+
+---
 ---
 
 <p align="center">

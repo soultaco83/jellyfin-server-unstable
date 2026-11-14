@@ -151,7 +151,7 @@ public sealed partial class TrickplayManager : ITrickplayManager, IDisposable
         }
     }
 
-    private async Task DiscoverExistingTrickplayAsync(Video video, bool saveWithMedia, CancellationToken cancellationToken)
+    internal async Task DiscoverExistingTrickplayAsync(Video video, bool saveWithMedia, CancellationToken cancellationToken)
     {
         var options = _config.Configuration.TrickplayOptions;
         var existing = await GetTrickplayResolutions(video.Id).ConfigureAwait(false);
@@ -208,11 +208,6 @@ public sealed partial class TrickplayManager : ITrickplayManager, IDisposable
             var tileWidth = int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
             var tileHeight = int.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture);
 
-            if (existing.ContainsKey(width))
-            {
-                continue;
-            }
-
             var tiles = subdir.GetFiles("*.jpg")
                 .OrderBy(t => t.Name, StringComparer.Ordinal)
                 .ToArray();
@@ -228,6 +223,16 @@ public sealed partial class TrickplayManager : ITrickplayManager, IDisposable
             var thumbsPerTile = tileWidth * tileHeight;
             var maxThumbs = tiles.Length * thumbsPerTile;
             var minThumbs = tiles.Length > 1 ? ((tiles.Length - 1) * thumbsPerTile) + 1 : 1;
+
+            // Keep a row unless it describes this folder and its count can't fit the tiles,
+            // like the tile file count stored by the import in 10.10 through 11.x.
+            if (existing.TryGetValue(width, out var current)
+                && (current.TileWidth != tileWidth
+                    || current.TileHeight != tileHeight
+                    || (current.ThumbnailCount >= minThumbs && current.ThumbnailCount <= maxThumbs)))
+            {
+                continue;
+            }
 
             int interval;
             int thumbnailCount;

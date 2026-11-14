@@ -12,6 +12,7 @@ using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Extensions;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Extensions;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller;
@@ -223,6 +224,10 @@ public class MediaInfoHelper
         }
 
         var user = _userManager.GetUserById(userId) ?? throw new ResourceNotFoundException();
+
+        // Server-wide override: honor the admin's EnableDirectPlay setting.
+        enableDirectPlay &= _serverConfigurationManager.GetEncodingOptions().EnableDirectPlay;
+        options.EnableDirectPlay = enableDirectPlay;
 
         if (!enableDirectPlay)
         {

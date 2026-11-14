@@ -64,6 +64,7 @@ public class EncodingOptions
         AllowOnDemandMetadataBasedKeyframeExtractionForExtensions = ["mkv"];
         HardwareDecodingCodecs = ["h264", "vc1"];
         HlsAudioSeekStrategy = HlsAudioSeekStrategy.TrimCopiedAudio;
+        EnableDirectPlay = true;
     }
 
     /// <summary>
@@ -312,6 +313,12 @@ public class EncodingOptions
     /// Gets or sets the file extensions on-demand metadata based keyframe extraction is enabled for.
     /// </summary>
     public string[] AllowOnDemandMetadataBasedKeyframeExtractionForExtensions { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether direct play is enabled. When disabled, the server forces transcoding.
+    /// </summary>
+    [DefaultValue(true)]
+    public bool EnableDirectPlay { get; set; }
 
     /// <summary>
     /// Gets or sets the method used for audio seeking in HLS.

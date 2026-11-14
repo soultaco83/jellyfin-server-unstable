@@ -21,6 +21,7 @@ namespace MediaBrowser.Model.Configuration
 
             HidePlayedInLatest = true;
             PlayDefaultAudioTrack = true;
+            SubtitleMode = SubtitlePlaybackMode.Smart;
 
             LatestItemsExcludes = Array.Empty<Guid>();
             OrderedViews = Array.Empty<Guid>();

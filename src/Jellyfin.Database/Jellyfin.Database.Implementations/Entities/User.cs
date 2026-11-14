@@ -51,7 +51,7 @@ namespace Jellyfin.Database.Implementations.Entities
             EnableNextEpisodeAutoPlay = true;
             EnableAutoLogin = false;
             PlayDefaultAudioTrack = true;
-            SubtitleMode = SubtitlePlaybackMode.Default;
+            SubtitleMode = SubtitlePlaybackMode.Smart;
             SyncPlayAccess = SyncPlayUserAccessType.CreateAndJoinGroups;
         }
 

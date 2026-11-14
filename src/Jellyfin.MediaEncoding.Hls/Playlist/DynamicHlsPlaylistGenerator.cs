@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -33,27 +32,25 @@ public class DynamicHlsPlaylistGenerator : IDynamicHlsPlaylistGenerator
     }
 
     /// <inheritdoc />
-    public bool TryGetKeyframeSegmentLengths(CreateMainPlaylistRequest request, [NotNullWhen(true)] out IReadOnlyList<double>? segmentLengths)
+    public async Task<IReadOnlyList<double>?> GetKeyframeSegmentLengthsAsync(CreateMainPlaylistRequest request, CancellationToken cancellationToken)
     {
         // For video transcodes it is sufficient with equal length segments as ffmpeg will create new keyframes
         if (request.IsRemuxingVideo
             && request.MediaSourceId is not null
             && await ExtractKeyframesAsync(request.MediaSourceId.Value, request.FilePath, cancellationToken).ConfigureAwait(false) is { } keyframeData)
         {
-            segmentLengths = ComputeSegments(keyframeData, request.DesiredSegmentLengthMs);
-            return true;
+            return ComputeSegments(keyframeData, request.DesiredSegmentLengthMs);
         }
 
-        segmentLengths = null;
-        return false;
+        return null;
     }
 
     /// <inheritdoc />
-    public string CreateMainPlaylist(CreateMainPlaylistRequest request)
+    public async Task<string> CreateMainPlaylistAsync(CreateMainPlaylistRequest request, CancellationToken cancellationToken)
     {
-        var segments = TryGetKeyframeSegmentLengths(request, out var keyframeSegments)
-            ? keyframeSegments
-            : ComputeEqualLengthSegments(request.DesiredSegmentLengthMs, request.TotalRuntimeTicks);
+        var keyframeSegments = await GetKeyframeSegmentLengthsAsync(request, cancellationToken).ConfigureAwait(false);
+        var segments = keyframeSegments
+            ?? ComputeEqualLengthSegments(request.DesiredSegmentLengthMs, request.TotalRuntimeTicks);
 
         var segmentExtension = EncodingHelper.GetSegmentFileExtension(request.SegmentContainer);
 

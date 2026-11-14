@@ -1,5 +1,5 @@
-using System.Threading;
-using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Jellyfin.MediaEncoding.Hls.Playlist;
 
@@ -14,5 +14,13 @@ public interface IDynamicHlsPlaylistGenerator
     /// <param name="request">An instance of the <see cref="CreateMainPlaylistRequest"/> class.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The playlist as a formatted string.</returns>
-    Task<string> CreateMainPlaylistAsync(CreateMainPlaylistRequest request, CancellationToken cancellationToken);
+    string CreateMainPlaylist(CreateMainPlaylistRequest request);
+
+    /// <summary>
+    /// Gets the length of every segment of the main playlist when the playlist is cut at the keyframes of the file.
+    /// </summary>
+    /// <param name="request">An instance of the <see cref="CreateMainPlaylistRequest"/> class.</param>
+    /// <param name="segmentLengths">The segment lengths in seconds, in playlist order.</param>
+    /// <returns><c>true</c> if the playlist is cut at keyframes, <c>false</c> if it uses equal lengths because the video is transcoded or has no keyframe data.</returns>
+    bool TryGetKeyframeSegmentLengths(CreateMainPlaylistRequest request, [NotNullWhen(true)] out IReadOnlyList<double>? segmentLengths);
 }

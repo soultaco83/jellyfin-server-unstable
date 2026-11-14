@@ -1,0 +1,46 @@
+diff --git a/MediaBrowser.Model/Configuration/EncodingOptions.cs b/MediaBrowser.Model/Configuration/EncodingOptions.cs
+--- a/MediaBrowser.Model/Configuration/EncodingOptions.cs
++++ b/MediaBrowser.Model/Configuration/EncodingOptions.cs
+@@ -64,6 +64,7 @@
+         AllowOnDemandMetadataBasedKeyframeExtractionForExtensions = ["mkv"];
+         HardwareDecodingCodecs = ["h264", "vc1"];
+         HlsAudioSeekStrategy = HlsAudioSeekStrategy.TrimCopiedAudio;
++        EnableDirectPlay = true;
+     }
+ 
+     /// <summary>
+@@ -314,6 +315,12 @@
+     public string[] AllowOnDemandMetadataBasedKeyframeExtractionForExtensions { get; set; }
+ 
+     /// <summary>
++    /// Gets or sets a value indicating whether direct play is enabled. When disabled, the server forces transcoding.
++    /// </summary>
++    [DefaultValue(true)]
++    public bool EnableDirectPlay { get; set; }
++
++    /// <summary>
+     /// Gets or sets the method used for audio seeking in HLS.
+     /// </summary>
+     [DefaultValue(HlsAudioSeekStrategy.TrimCopiedAudio)]
+diff --git a/Jellyfin.Api/Helpers/MediaInfoHelper.cs b/Jellyfin.Api/Helpers/MediaInfoHelper.cs
+--- a/Jellyfin.Api/Helpers/MediaInfoHelper.cs
++++ b/Jellyfin.Api/Helpers/MediaInfoHelper.cs
+@@ -12,6 +12,7 @@
+ using Jellyfin.Database.Implementations.Entities;
+ using Jellyfin.Database.Implementations.Enums;
+ using Jellyfin.Extensions;
++using MediaBrowser.Common.Configuration;
+ using MediaBrowser.Common.Extensions;
+ using MediaBrowser.Common.Net;
+ using MediaBrowser.Controller;
+@@ -224,6 +225,10 @@
+ 
+         var user = _userManager.GetUserById(userId) ?? throw new ResourceNotFoundException();
+ 
++        // Server-wide override: honor the admin's EnableDirectPlay setting.
++        enableDirectPlay &= _serverConfigurationManager.GetEncodingOptions().EnableDirectPlay;
++        options.EnableDirectPlay = enableDirectPlay;
++
+         if (!enableDirectPlay)
+         {
+             mediaSource.SupportsDirectPlay = false;

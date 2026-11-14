@@ -1,0 +1,23 @@
+diff --git a/src/Jellyfin.Database/Jellyfin.Database.Implementations/Entities/User.cs b/src/Jellyfin.Database/Jellyfin.Database.Implementations/Entities/User.cs
+--- a/src/Jellyfin.Database/Jellyfin.Database.Implementations/Entities/User.cs
++++ b/src/Jellyfin.Database/Jellyfin.Database.Implementations/Entities/User.cs
+@@ -51,7 +51,7 @@
+             EnableNextEpisodeAutoPlay = true;
+             EnableAutoLogin = false;
+             PlayDefaultAudioTrack = true;
+-            SubtitleMode = SubtitlePlaybackMode.Default;
++            SubtitleMode = SubtitlePlaybackMode.Smart;
+             SyncPlayAccess = SyncPlayUserAccessType.CreateAndJoinGroups;
+         }
+ 
+diff --git a/MediaBrowser.Model/Configuration/UserConfiguration.cs b/MediaBrowser.Model/Configuration/UserConfiguration.cs
+--- a/MediaBrowser.Model/Configuration/UserConfiguration.cs
++++ b/MediaBrowser.Model/Configuration/UserConfiguration.cs
+@@ -21,6 +21,7 @@
+ 
+             HidePlayedInLatest = true;
+             PlayDefaultAudioTrack = true;
++            SubtitleMode = SubtitlePlaybackMode.Smart;
+ 
+             LatestItemsExcludes = Array.Empty<Guid>();
+             OrderedViews = Array.Empty<Guid>();

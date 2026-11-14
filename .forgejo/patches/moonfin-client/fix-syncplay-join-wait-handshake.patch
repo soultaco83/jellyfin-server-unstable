@@ -1,0 +1,23 @@
+--- a/lib/syncplay/syncplay_manager.dart
++++ b/lib/syncplay/syncplay_manager.dart
+@@ -694,11 +694,19 @@
+     final reason = update.reason;
+     final isItemSwitch = reason == SyncPlayQueueUpdateReason.newPlaylist ||
+         reason == SyncPlayQueueUpdateReason.setCurrentItem ||
+         reason == SyncPlayQueueUpdateReason.nextItem ||
+         reason == SyncPlayQueueUpdateReason.previousItem ||
+         previousPlaylistItemId != _state.currentPlaylistItemId;
+-    if (!isItemSwitch) return;
++    if (!isItemSwitch) {
++      // A queue update that leaves the playing item alone still arrives while
++      // the group waits, and this session owes the server its Ready either way.
++      // Joining a group that already has the item loaded is the case that
++      // matters: no item switch ever follows, so returning here leaves the
++      // whole group waiting until the server gives up on this session.
++      _answerWaitingAfterQueueChange();
++      return;
++    }
+ 
+     // Seek latency and convergence are per-stream, and a give-up must not
+     // outlive the item that caused it.
+     _syncCorrection.reset();

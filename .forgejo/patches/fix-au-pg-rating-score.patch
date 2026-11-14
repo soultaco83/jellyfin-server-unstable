@@ -1,0 +1,11 @@
+--- a/Emby.Server.Implementations/Localization/Ratings/au.json
++++ b/Emby.Server.Implementations/Localization/Ratings/au.json
+@@ -19,7 +19,7 @@
+         {
+             "ratingStrings": ["PG"],
+             "ratingScore": {
+-                "score": 15,
++                "score": 13,
+                 "subScore": 1
+             }
+         },

@@ -1,0 +1,104 @@
+--- a/lib/data/services/synced_fields.dart
++++ b/lib/data/services/synced_fields.dart
+@@ -187,7 +187,12 @@
+   SyncedField('mdblistShowRatingBadges', UserPreferences.showRatingBadges, SyncCodec.boolean),
+   SyncedField('tmdbEpisodeRatingsEnabled', UserPreferences.enableEpisodeRatings, SyncCodec.boolean),
+   SyncedField('tmdbApiKey', UserPreferences.tmdbApiKey, SyncCodec.text, receiveOnly: true),
+-  SyncedField('seerrEnabled', UserPreferences.seerrEnabled, SyncCodec.boolean),
++  // The per-user Seerr switch is only meant to travel once the user has made the choice
++  // themselves, which SeerrPreferences.enabledOverride records. Echoing the local default
++  // here wrote a "false" into the profile on every push, and that stored false outranked
++  // the admin's "enable Seerr for all users" on every later login. Still applied from the
++  // server, which is how a deliberate opt-out reaches other devices.
++  SyncedField('seerrEnabled', UserPreferences.seerrEnabled, SyncCodec.boolean, receiveOnly: true),
+   SyncedField('seerrBlockNsfw', UserPreferences.seerrBlockNsfw, SyncCodec.boolean),
+   SyncedField('seerrShowMissingCollectionItems', UserPreferences.seerrShowMissingCollectionItems, SyncCodec.boolean),
+   SyncedField('recentlyReleasedSeriesType', UserPreferences.recentlyReleasedSeriesType, SyncCodec.enumName, enumValues: prefs.RecentlyReleasedSeriesType.values),
+--- a/lib/data/services/plugin_sync_service.dart
++++ b/lib/data/services/plugin_sync_service.dart
+@@ -293,7 +293,11 @@
+         final userEnabled = _readBool(seerrConfig, 'userEnabled');
+         _seerrEnabled = enabled ?? _seerrEnabled;
+ 
+-        if (userEnabled != null) {
++        // A choice the user made on Seerr's settings screen outranks the stored value,
++        // which until the plugin cleared it could be a "false" this app had written on
++        // their behalf. Without an override the server decides, which is what turns Seerr
++        // on for every user the admin enabled it for.
++        if (userEnabled != null && _seerrPrefs.enabledOverride == null) {
+           _setLocalSeerrEnabled(userEnabled);
+         }
+ 
+@@ -1949,6 +1953,14 @@
+       payload['tmdbApiKey'] = tmdbKey;
+     }
+ 
++    // The per-user Seerr switch travels only once the user has flipped it themselves.
++    // The field table carries it receiveOnly, so this is the one place it is sent and an
++    // install nobody has touched never writes its default over the server's default.
++    final seerrOverride = _seerrPrefs.enabledOverride;
++    if (seerrOverride != null) {
++      payload['seerrEnabled'] = seerrOverride;
++    }
++
+     return payload;
+   }
+ 
+--- a/lib/preference/seerr_preferences.dart
++++ b/lib/preference/seerr_preferences.dart
+@@ -27,6 +27,18 @@
+   bool get enabled => _store.getBool(_userKey('enabled')) ?? false;
+   Future<void> setEnabled(bool value) => _store.setBool(_userKey('enabled'), value);
+ 
++  /// The value the user picked on the Seerr settings screen, or null while they have
++  /// never touched the switch. [enabled] is also written from the server response, so
++  /// this is what tells a deliberate choice apart from one the app made on their behalf.
++  bool? get enabledOverride => _store.getBool(_userKey('enabled_override'));
++  Future<void> setEnabledOverride(bool? value) async {
++    if (value == null) {
++      await _store.remove(_userKey('enabled_override'));
++      return;
++    }
++    await _store.setBool(_userKey('enabled_override'), value);
++  }
++
+   String get serverUrl => _store.getString(_userKey('server_url')) ?? '';
+   Future<void> setServerUrl(String value) => _store.setString(_userKey('server_url'), value);
+ 
+@@ -212,7 +224,7 @@
+ 
+   Future<void> clearAll() async {
+     final keys = [
+-      'enabled', 'server_url', 'auth_method', 'api_key',
++      'enabled', 'enabled_override', 'server_url', 'auth_method', 'api_key',
+       'moonfin_mode', 'moonfin_display_name', 'moonfin_variant', 'moonfin_user_id',
+       'last_connection_success',
+       'show_in_navigation', 'show_in_toolbar', 'show_request_status',
+--- a/lib/ui/screens/settings/seerr_config_screen.dart
++++ b/lib/ui/screens/settings/seerr_config_screen.dart
+@@ -203,6 +203,7 @@
+       }
+ 
+       await _seerrPrefs.setEnabled(true);
++      await _seerrPrefs.setEnabledOverride(true);
+       await GetIt.instance<UserPreferences>().set(
+         UserPreferences.seerrEnabled,
+         true,
+@@ -223,6 +224,7 @@
+       final repo = await GetIt.instance.getAsync<SeerrRepository>();
+       await repo.logoutMoonfin();
+       await _seerrPrefs.setEnabled(true);
++      await _seerrPrefs.setEnabledOverride(true);
+       await GetIt.instance<UserPreferences>().set(
+         UserPreferences.seerrEnabled,
+         true,
+@@ -336,6 +338,9 @@
+ 
+   Future<void> _setSeerrEnabled(bool value) async {
+     await _seerrPrefs.setEnabled(value);
++    // Recorded as the user's own choice, so the next server refresh keeps it instead of
++    // resetting it, and it syncs as an override rather than as an untouched default.
++    await _seerrPrefs.setEnabledOverride(value);
+     await GetIt.instance<UserPreferences>().set(
+       UserPreferences.seerrEnabled,
+       value,

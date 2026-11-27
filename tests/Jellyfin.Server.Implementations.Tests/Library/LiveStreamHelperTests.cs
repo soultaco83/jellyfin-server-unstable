@@ -1,8 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Emby.Server.Implementations.Library;
@@ -22,67 +20,69 @@ namespace Jellyfin.Server.Implementations.Tests.Library;
 public class LiveStreamHelperTests
 {
     [Fact]
-    public async Task AddMediaInfoWithProbe_WithCacheKey_FiltersDvbsubStreamsAndPreservesIndices()
+    public async Task AddMediaInfoWithProbe_DiscardsIncompleteCachedProbeAndDoesNotCacheAnother()
     {
         var cacheDir = CreateTempDirectory();
-        var cacheKey = "live-tv-test";
-        var probedStreams = new List<MediaStream>
-        {
-            new() { Index = 0, Type = MediaStreamType.Data, Codec = "epg" },
-            new() { Index = 1, Type = MediaStreamType.Video, Codec = "h264", Width = 1920, Height = 1080 },
-            new() { Index = 2, Type = MediaStreamType.Audio, Codec = "ac3", Channels = 6 },
-            new() { Index = 3, Type = MediaStreamType.Subtitle, Codec = "DVBSUB", Language = "dut", IsHearingImpaired = true },
-            new() { Index = 4, Type = MediaStreamType.Subtitle, Codec = "DVBTXT", Language = "rum" },
-            new() { Index = 5, Type = MediaStreamType.Audio, Codec = "aac", Channels = 2 },
-        };
+        var cacheKey = "digi-4k";
+        var cacheFile = Path.Combine(cacheDir, "mediainfo", cacheKey.GetMD5().ToString("N", CultureInfo.InvariantCulture) + ".json");
+        Directory.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
+        await File.WriteAllTextAsync(
+            cacheFile,
+            """{"Container":"ts","MediaStreams":[{"Type":"Video","Codec":"hevc","Width":0,"Height":0,"Index":1}]}""",
+            TestContext.Current.CancellationToken);
 
         var mediaEncoder = new Mock<IMediaEncoder>();
         mediaEncoder
-            .Setup(m => m.GetMediaInfo(It.IsAny<MediaInfoRequest>(), It.IsAny<CancellationToken>()))
+            .SetupSequence(m => m.GetMediaInfo(It.IsAny<MediaInfoRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MediaInfo
             {
                 Container = "ts",
-                MediaStreams = probedStreams,
+                MediaStreams =
+                [
+                    new() { Index = 1, Type = MediaStreamType.Video, Codec = "hevc", Width = 0, Height = 0 },
+                    new() { Index = 2, Type = MediaStreamType.Audio, Codec = "aac", Channels = 0, SampleRate = 0 },
+                ],
+            })
+            .ReturnsAsync(new MediaInfo
+            {
+                Container = "ts",
+                MediaStreams =
+                [
+                    new() { Index = 1, Type = MediaStreamType.Video, Codec = "hevc", Width = 3840, Height = 2160 },
+                    new() { Index = 2, Type = MediaStreamType.Audio, Codec = "aac", Channels = 2, SampleRate = 48000 },
+                ],
             });
 
         var appPaths = new Mock<IApplicationPaths>();
         appPaths.Setup(p => p.CachePath).Returns(cacheDir);
+        var helper = new LiveStreamHelper(mediaEncoder.Object, Mock.Of<ILogger>(), appPaths.Object);
 
-        var helper = new LiveStreamHelper(
-            mediaEncoder.Object,
-            Mock.Of<ILogger>(),
-            appPaths.Object);
-
-        var mediaSource = new MediaSourceInfo
+        var incomplete = new MediaSourceInfo
         {
-            Id = "test-stream",
             Path = "http://localhost/stream.ts",
             Protocol = MediaProtocol.Http,
+            SupportsDirectPlay = true,
+            SupportsDirectStream = true,
         };
+        await helper.AddMediaInfoWithProbe(incomplete, false, cacheKey, false, TestContext.Current.CancellationToken);
 
-        await helper.AddMediaInfoWithProbe(
-            mediaSource,
-            isAudio: false,
-            cacheKey: cacheKey,
-            addProbeDelay: false,
-            TestContext.Current.CancellationToken);
+        Assert.False(incomplete.SupportsDirectPlay);
+        Assert.False(incomplete.SupportsDirectStream);
+        Assert.False(File.Exists(cacheFile));
 
-        Assert.Equal("ts", mediaSource.Container);
-        Assert.Null(mediaSource.DefaultSubtitleStreamIndex);
-        Assert.Equal(2, mediaSource.DefaultAudioStreamIndex);
+        var complete = new MediaSourceInfo
+        {
+            Path = "http://localhost/stream.ts",
+            Protocol = MediaProtocol.Http,
+            SupportsDirectPlay = true,
+            SupportsDirectStream = true,
+        };
+        await helper.AddMediaInfoWithProbe(complete, false, cacheKey, false, TestContext.Current.CancellationToken);
 
-        var subtitle = Assert.Single(mediaSource.MediaStreams, s => s.Type == MediaStreamType.Subtitle);
-        Assert.Equal(3, subtitle.Index);
-        Assert.Equal("DVBSUB", subtitle.Codec);
-        Assert.Equal("dut", subtitle.Language);
-        Assert.True(subtitle.IsHearingImpaired);
-
-        Assert.Single(mediaSource.MediaStreams, s => s.Type == MediaStreamType.Video);
-        Assert.Single(mediaSource.MediaStreams, s => s.Type == MediaStreamType.Audio);
-        Assert.Single(mediaSource.MediaStreams, s => s.Type == MediaStreamType.Data);
-        Assert.DoesNotContain(mediaSource.MediaStreams, s => s.Codec == "DVBTXT");
-        Assert.Equal(4, mediaSource.MediaStreams.Count);
-        Assert.Null(mediaSource.RunTimeTicks);
+        Assert.Equal(3840, complete.VideoStream.Width);
+        Assert.True(complete.SupportsDirectPlay);
+        Assert.True(File.Exists(cacheFile));
+        mediaEncoder.Verify(m => m.GetMediaInfo(It.IsAny<MediaInfoRequest>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     private static string CreateTempDirectory()

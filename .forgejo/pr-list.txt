@@ -1,0 +1,31 @@
+# PR list for jellyfin-server-unstable
+# Three formats supported:
+#   12345              = GitHub upstream PR (fetched from github.com/jellyfin/jellyfin)
+#   local:branch/name  = Local Forgejo branch (fetched by branch name from this repo)
+#   pr:N               = Local Forgejo PR by number (fetched via refs/pull/N/head)
+#
+# Entries are applied in the ORDER LISTED — you can interleave local:/pr: entries
+# between upstream PRs to apply fixes at the right point in the stack.
+# local: and pr: entries are NEVER auto-removed — manage them manually.
+16585
+16877
+17004
+17012
+17258
+18188
+18357
+18363
+18403
+18407
+18448
+18452
+18504
+18528
+18650
+18686
+18701
+18718
+18728
+18731
+18759
+18761

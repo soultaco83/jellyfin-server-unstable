@@ -1,0 +1,144 @@
+diff --git a/Emby.Server.Implementations/SyncPlay/Group.cs b/Emby.Server.Implementations/SyncPlay/Group.cs
+index 1cfdfadbfe..94196fdad8 100644
+--- a/Emby.Server.Implementations/SyncPlay/Group.cs
++++ b/Emby.Server.Implementations/SyncPlay/Group.cs
+@@ -356,7 +356,11 @@ namespace Emby.Server.Implementations.SyncPlay
+         {
+             AddSession(session);
+ 
+-            var updateSession = new SyncPlayGroupJoinedUpdate(GroupId, GetInfo());
++            // A playing or paused group is about to be moved to waiting to hold it for this session,
++            // and the joiner gets no state update for that switch. Telling it the state from before
++            // the join leaves the client with no reason to report ready, which holds the whole group
++            // until the wait deadline expires.
++            var updateSession = new SyncPlayGroupJoinedUpdate(GroupId, GetJoinInfo());
+             SendGroupUpdate(session, SyncPlayBroadcastType.CurrentSession, updateSession, cancellationToken);
+ 
+             var updateOthers = new SyncPlayUserJoinedUpdate(GroupId, session.UserName);
+@@ -418,9 +422,36 @@ namespace Emby.Server.Implementations.SyncPlay
+         /// </summary>
+         /// <returns>The group info for the clients.</returns>
+         public GroupInfoDto GetInfo()
++        {
++            return GetInfo(_state.Type);
++        }
++
++        /// <summary>
++        /// Gets the info about the group for the clients, reporting the given state.
++        /// </summary>
++        /// <param name="state">The state to report.</param>
++        /// <returns>The group info for the clients.</returns>
++        private GroupInfoDto GetInfo(GroupStateType state)
+         {
+             var participants = _participants.Values.Select(session => session.UserName).Distinct().ToList();
+-            return new GroupInfoDto(GroupId, GroupName, _state.Type, participants, DateTime.UtcNow);
++            return new GroupInfoDto(GroupId, GroupName, state, participants, DateTime.UtcNow);
++        }
++
++        /// <summary>
++        /// Gets the info about the group for a session that is joining it.
++        /// </summary>
++        /// <remarks>
++        /// <see cref="IGroupState.SessionJoined"/> moves a playing or paused group to the waiting
++        /// state, so the joiner must be told that state rather than the one from before the join.
++        /// </remarks>
++        /// <returns>The group info for the joining session.</returns>
++        private GroupInfoDto GetJoinInfo()
++        {
++            var state = _state.Type is GroupStateType.Playing or GroupStateType.Paused
++                ? GroupStateType.Waiting
++                : _state.Type;
++
++            return GetInfo(state);
+         }
+ 
+         /// <summary>
+diff --git a/tests/Jellyfin.Server.Implementations.Tests/SyncPlay/WaitingGroupStateTests.cs b/tests/Jellyfin.Server.Implementations.Tests/SyncPlay/WaitingGroupStateTests.cs
+index d3cbc9b8be..0a13eda39e 100644
+--- a/tests/Jellyfin.Server.Implementations.Tests/SyncPlay/WaitingGroupStateTests.cs
++++ b/tests/Jellyfin.Server.Implementations.Tests/SyncPlay/WaitingGroupStateTests.cs
+@@ -323,6 +323,63 @@ public class WaitingGroupStateTests
+         Assert.NotNull(group.GroupWaitDeadline);
+     }
+ 
++    [Fact]
++    public void SessionJoined_PlayingGroup_JoinerIsToldTheGroupIsWaiting()
++    {
++        var harness = new GroupHarness();
++        var group = harness.Group;
++
++        group.LastActivity = DateTime.UtcNow;
++        group.SetState(new PlayingGroupState(NullLoggerFactory.Instance));
++
++        var joiner = harness.NewSession("joiner");
++        group.SessionJoin(joiner, new JoinGroupRequest(group.GroupId), CancellationToken.None);
++
++        Assert.Equal(GroupStateType.Waiting, group.GetInfo().State);
++
++        // The joiner is held in waiting for the ready handshake, but no state update announces
++        // that switch, so the group-joined info is the only place it can learn about it. Told the
++        // state from before the join, the client keeps playing and never reports ready.
++        var info = harness.GroupInfoUpdates.Single(update => update.SessionId == joiner.Id).Update.Data;
++        Assert.Equal(GroupStateType.Waiting, info.State);
++        Assert.Contains("joiner", info.Participants);
++    }
++
++    [Fact]
++    public void SessionJoined_PausedGroup_JoinerIsToldTheGroupIsWaiting()
++    {
++        var harness = new GroupHarness();
++        var group = harness.Group;
++
++        group.LastActivity = DateTime.UtcNow;
++        group.SetState(new PausedGroupState(NullLoggerFactory.Instance));
++
++        var joiner = harness.NewSession("joiner");
++        group.SessionJoin(joiner, new JoinGroupRequest(group.GroupId), CancellationToken.None);
++
++        Assert.Equal(GroupStateType.Waiting, group.GetInfo().State);
++        Assert.NotNull(group.GroupWaitDeadline);
++
++        var info = harness.GroupInfoUpdates.Single(update => update.SessionId == joiner.Id).Update.Data;
++        Assert.Equal(GroupStateType.Waiting, info.State);
++    }
++
++    [Fact]
++    public void SessionJoined_IdleGroup_JoinerIsToldTheGroupIsIdle()
++    {
++        var harness = new GroupHarness();
++        var group = harness.Group;
++
++        Assert.Equal(GroupStateType.Idle, group.GetInfo().State);
++
++        var joiner = harness.NewSession("joiner");
++        group.SessionJoin(joiner, new JoinGroupRequest(group.GroupId), CancellationToken.None);
++
++        // Nothing is being waited for, so the joiner must not be sent into the ready handshake.
++        var info = harness.GroupInfoUpdates.Single(update => update.SessionId == joiner.Id).Update.Data;
++        Assert.Equal(GroupStateType.Idle, info.State);
++    }
++
+     private sealed class GroupHarness
+     {
+         private readonly ISessionManager _sessionManager;
+@@ -352,6 +409,11 @@ public class WaitingGroupStateTests
+                 .Callback((string sessionId, GroupUpdate<GroupStateUpdate> update, CancellationToken _) => StateUpdates.Add((sessionId, update.Data)))
+                 .Returns(Task.CompletedTask);
+ 
++            sessionManager
++                .Setup(m => m.SendSyncPlayGroupUpdate(It.IsAny<string>(), It.IsAny<GroupUpdate<GroupInfoDto>>(), It.IsAny<CancellationToken>()))
++                .Callback((string sessionId, GroupUpdate<GroupInfoDto> update, CancellationToken _) => GroupInfoUpdates.Add((sessionId, update)))
++                .Returns(Task.CompletedTask);
++
+             Group = new SyncPlayGroup(
+                 NullLoggerFactory.Instance,
+                 userManager.Object,
+@@ -377,6 +439,8 @@ public class WaitingGroupStateTests
+ 
+         public List<(string SessionId, GroupStateUpdate Update)> StateUpdates { get; } = new();
+ 
++        public List<(string SessionId, GroupUpdate<GroupInfoDto> Update)> GroupInfoUpdates { get; } = new();
++
+         public SessionInfo First { get; }
+ 
+         public SessionInfo Second { get; }

@@ -323,6 +323,63 @@ public class WaitingGroupStateTests
         Assert.NotNull(group.GroupWaitDeadline);
     }
 
+    [Fact]
+    public void SessionJoined_PlayingGroup_JoinerIsToldTheGroupIsWaiting()
+    {
+        var harness = new GroupHarness();
+        var group = harness.Group;
+
+        group.LastActivity = DateTime.UtcNow;
+        group.SetState(new PlayingGroupState(NullLoggerFactory.Instance));
+
+        var joiner = harness.NewSession("joiner");
+        group.SessionJoin(joiner, new JoinGroupRequest(group.GroupId), CancellationToken.None);
+
+        Assert.Equal(GroupStateType.Waiting, group.GetInfo().State);
+
+        // The joiner is held in waiting for the ready handshake, but no state update announces
+        // that switch, so the group-joined info is the only place it can learn about it. Told the
+        // state from before the join, the client keeps playing and never reports ready.
+        var info = harness.GroupInfoUpdates.Single(update => update.SessionId == joiner.Id).Update.Data;
+        Assert.Equal(GroupStateType.Waiting, info.State);
+        Assert.Contains("joiner", info.Participants);
+    }
+
+    [Fact]
+    public void SessionJoined_PausedGroup_JoinerIsToldTheGroupIsWaiting()
+    {
+        var harness = new GroupHarness();
+        var group = harness.Group;
+
+        group.LastActivity = DateTime.UtcNow;
+        group.SetState(new PausedGroupState(NullLoggerFactory.Instance));
+
+        var joiner = harness.NewSession("joiner");
+        group.SessionJoin(joiner, new JoinGroupRequest(group.GroupId), CancellationToken.None);
+
+        Assert.Equal(GroupStateType.Waiting, group.GetInfo().State);
+        Assert.NotNull(group.GroupWaitDeadline);
+
+        var info = harness.GroupInfoUpdates.Single(update => update.SessionId == joiner.Id).Update.Data;
+        Assert.Equal(GroupStateType.Waiting, info.State);
+    }
+
+    [Fact]
+    public void SessionJoined_IdleGroup_JoinerIsToldTheGroupIsIdle()
+    {
+        var harness = new GroupHarness();
+        var group = harness.Group;
+
+        Assert.Equal(GroupStateType.Idle, group.GetInfo().State);
+
+        var joiner = harness.NewSession("joiner");
+        group.SessionJoin(joiner, new JoinGroupRequest(group.GroupId), CancellationToken.None);
+
+        // Nothing is being waited for, so the joiner must not be sent into the ready handshake.
+        var info = harness.GroupInfoUpdates.Single(update => update.SessionId == joiner.Id).Update.Data;
+        Assert.Equal(GroupStateType.Idle, info.State);
+    }
+
     private sealed class GroupHarness
     {
         private readonly ISessionManager _sessionManager;
@@ -352,6 +409,11 @@ public class WaitingGroupStateTests
                 .Callback((string sessionId, GroupUpdate<GroupStateUpdate> update, CancellationToken _) => StateUpdates.Add((sessionId, update.Data)))
                 .Returns(Task.CompletedTask);
 
+            sessionManager
+                .Setup(m => m.SendSyncPlayGroupUpdate(It.IsAny<string>(), It.IsAny<GroupUpdate<GroupInfoDto>>(), It.IsAny<CancellationToken>()))
+                .Callback((string sessionId, GroupUpdate<GroupInfoDto> update, CancellationToken _) => GroupInfoUpdates.Add((sessionId, update)))
+                .Returns(Task.CompletedTask);
+
             Group = new SyncPlayGroup(
                 NullLoggerFactory.Instance,
                 userManager.Object,
@@ -376,6 +438,8 @@ public class WaitingGroupStateTests
         public SyncPlayGroup Group { get; }
 
         public List<(string SessionId, GroupStateUpdate Update)> StateUpdates { get; } = new();
+
+        public List<(string SessionId, GroupUpdate<GroupInfoDto> Update)> GroupInfoUpdates { get; } = new();
 
         public SessionInfo First { get; }
 

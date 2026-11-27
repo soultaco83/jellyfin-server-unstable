@@ -331,7 +331,11 @@ namespace Emby.Server.Implementations.SyncPlay
         {
             AddSession(session);
 
-            var updateSession = new SyncPlayGroupJoinedUpdate(GroupId, GetInfo());
+            // A playing or paused group is about to be moved to waiting to hold it for this session,
+            // and the joiner gets no state update for that switch. Telling it the state from before
+            // the join leaves the client with no reason to report ready, which holds the whole group
+            // until the wait deadline expires.
+            var updateSession = new SyncPlayGroupJoinedUpdate(GroupId, GetJoinInfo());
             SendGroupUpdate(session, SyncPlayBroadcastType.CurrentSession, updateSession, cancellationToken);
 
             var updateOthers = new SyncPlayUserJoinedUpdate(GroupId, session.UserName);
@@ -394,8 +398,35 @@ namespace Emby.Server.Implementations.SyncPlay
         /// <returns>The group info for the clients.</returns>
         public GroupInfoDto GetInfo()
         {
+            return GetInfo(_state.Type);
+        }
+
+        /// <summary>
+        /// Gets the info about the group for the clients, reporting the given state.
+        /// </summary>
+        /// <param name="state">The state to report.</param>
+        /// <returns>The group info for the clients.</returns>
+        private GroupInfoDto GetInfo(GroupStateType state)
+        {
             var participants = _participants.Values.Select(session => session.UserName).Distinct().ToList();
-            return new GroupInfoDto(GroupId, GroupName, _state.Type, participants, DateTime.UtcNow);
+            return new GroupInfoDto(GroupId, GroupName, state, participants, DateTime.UtcNow);
+        }
+
+        /// <summary>
+        /// Gets the info about the group for a session that is joining it.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="IGroupState.SessionJoined"/> moves a playing or paused group to the waiting
+        /// state, so the joiner must be told that state rather than the one from before the join.
+        /// </remarks>
+        /// <returns>The group info for the joining session.</returns>
+        private GroupInfoDto GetJoinInfo()
+        {
+            var state = _state.Type is GroupStateType.Playing or GroupStateType.Paused
+                ? GroupStateType.Waiting
+                : _state.Type;
+
+            return GetInfo(state);
         }
 
         /// <summary>

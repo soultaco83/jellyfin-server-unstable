@@ -255,6 +255,7 @@
  - [mysticalsoap](https://github.com/mysticalsoap)
  - [Starkiller21321](https://github.com/Starkiller21321)
  - [Amer Hesson](https://github.com/hessonam)
+ - [tgn](https://github.com/gonssalu)
 
 # Emby Contributors
 
